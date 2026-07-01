@@ -1,4 +1,4 @@
-# ─────────────────────────────────────────────────────────────────────
+﻿# ─────────────────────────────────────────────────────────────────────
 #  kppdf-7.0 launcher v1.0  (PowerShell — native Windows)
 #  Subcommands: setup/start/stop/status/logs/reset/help
 #  See: .\start.ps1 --help  or  ./start.sh --help  (bash equivalent)
@@ -19,8 +19,9 @@ $BackendDir  = Join-Path $RootDir 'backend'
 $RunDir      = Join-Path $RootDir '.run'
 
 # Colors
-$RED = "`e[0;31m"; $GREEN = "`e[0;32m"; $YELLOW = "`e[1;33m"
-$CYAN = "`e[0;36m"; $BOLD = "`e[1m"; $RESET = "`e[0m"
+# ANSI escape char (`e is not a valid PS escape — use [char]27 instead)
+$RED = [char]27 + '[0;31m'; $GREEN = [char]27 + '[0;32m'; $YELLOW = [char]27 + '[1;33m'
+$CYAN = [char]27 + '[0;36m'; $BOLD = [char]27 + '[1m'; $RESET = [char]27 + '[0m'
 
 function Banner {
   Write-Host "${CYAN}${BOLD}"
@@ -133,8 +134,8 @@ function StartBackend {
   Info "Starting backend in background..."
   $logFile = Join-Path $RunDir 'backend.log'
   $proc = Start-Process -FilePath 'cmd.exe' `
-    -ArgumentList '/c','cd','/d',$BackendDir,'&&','npm','run','start:dev' `
-    -RedirectStandardOutput $logFile -RedirectStandardError $logFile `
+    -ArgumentList '/c','cd','/d',$BackendDir,'&&','npm','run','start:dev','2>&1' `
+    -RedirectStandardOutput $logFile `
     -WindowStyle Hidden -PassThru
   $proc.Id | Out-File -FilePath $pidfile -Encoding utf8
   Start-Sleep -Seconds 6
@@ -151,8 +152,8 @@ function StartFrontend {
   Info "Starting frontend in background..."
   $logFile = Join-Path $RunDir 'frontend.log'
   $proc = Start-Process -FilePath 'cmd.exe' `
-    -ArgumentList '/c','cd','/d',$FrontendDir,'&&','npm','start' `
-    -RedirectStandardOutput $logFile -RedirectStandardError $logFile `
+    -ArgumentList '/c','cd','/d',$FrontendDir,'&&','npm','start','2>&1' `
+    -RedirectStandardOutput $logFile `
     -WindowStyle Hidden -PassThru
   $proc.Id | Out-File -FilePath $pidfile -Encoding utf8
   Start-Sleep -Seconds 6
@@ -175,7 +176,7 @@ function Verify {
     Start-Sleep -Seconds 3; $elapsed += 3
   }
   if ($elapsed -ge $maxWait) {
-    Warn "Backend /api/health: not responding in ${maxWait}s. Check: $RunDir\backend.log"
+    Warn "Backend /api/health: not responding in ${maxWait}s. Check: `$RunDir\backend.log"
   }
   Write-Host "`n${GREEN}${BOLD}"
   Write-Host "  ╔══════════════════════════════════════════╗"
@@ -187,8 +188,8 @@ function Verify {
   Write-Host "  🛢  MongoDB:       ${CYAN}localhost:27017${RESET} (replica set rs0)"
   Write-Host "  ⚡ Redis:         ${CYAN}localhost:6379${RESET}"
   Write-Host ""
-  Write-Host "  📄 Logs:    Get-Content $RunDir\backend.log -Wait"
-  Write-Host "             Get-Content $RunDir\frontend.log -Wait"
+  Write-Host "  📄 Logs:    Get-Content `$RunDir\backend.log -Wait"
+  Write-Host "             Get-Content `$RunDir\frontend.log -Wait"
   Write-Host "  🛑 Stop:    ${YELLOW}.\start.ps1 stop${RESET}"
   Write-Host "  📊 Status:  ${YELLOW}.\start.ps1 status${RESET}`n"
 }
@@ -208,9 +209,9 @@ function CmdStop {
     $pf = Join-Path $RunDir "$svc.pid"
     if (Test-Path $pf) {
       try { Stop-Process -Id (Get-Content $pf) -ErrorAction Stop; Ok "Stopped $svc (PID $(Get-Content $pf))" }
-      catch { Warn "$svc: PID not running" }
+      catch { Warn "${svc}: PID not running" }
       Remove-Item $pf -Force
-    } else { Info "$svc: no pidfile" }
+    } else { Info "${svc}: no pidfile" }
   }
   Push-Location $BackendDir; docker compose down; Pop-Location
   Ok "All services stopped"

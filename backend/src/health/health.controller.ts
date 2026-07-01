@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectConnection } from '@nestjs/mongoose';
 import type { Connection as MongooseConnection } from 'mongoose';
 import Redis from 'ioredis';
+import type { RedisConfig } from '../config/configuration';
 
 interface HealthResponse {
   status: 'ok' | 'degraded' | 'down';
@@ -16,21 +17,26 @@ interface HealthResponse {
  * Health check controller — GET /api/health.
  *
  * MongoDB: Mongoose readyState (0=disconnected, 1=connected, 2=connecting, 3=disconnecting).
- * Redis: direct ioredis client with `.ping()`. 1s timeout via Promise.race so the
- *        health endpoint never hangs when Redis is down.
+ * Redis:   direct ioredis client with `.ping()`. 1s timeout via Promise.race so the
+ *          health endpoint never hangs when Redis is down.
  *
- * Uses ConfigService (typed via src/config/configuration.ts registerAs) instead of
- * raw process.env access — keeps env validation centralized and removes duplicate
- * fallback literals ('localhost' / 6379).
+ * Uses ConfigService (typed via src/config/configuration.ts → RedisConfig) instead of
+ * raw process.env access — keeps env validation centralized.
  *
  * Implementation notes:
- * - Lazy Redis client (created on first check) — no upfront connection at module init.
- * - On ping failure: disconnect + null client so next check reconnects from scratch.
+ * - Single long-lived Redis client (created on first check). ioredis handles
+ *   reconnect internally — we don't disconnect+null on transient errors.
+ * - Lazy initialization: client created on first check, not at module init.
  * - `OnApplicationShutdown` for graceful Redis cleanup at app exit.
  *
- * Earlier iteration notes (for posterity — DO NOT REPEAT):
+ * Earlier iteration (DO NOT REPEAT):
  *   - `@InjectConnection('default')` from @nestjs/mongoose only resolves Mongoose
- *     connections, not BullMQ — avoid using it for Redis.
+ *     connections, not BullMQ.
+ *   - Strict ioredis options (`maxRetriesPerRequest: 1` + `enableOfflineQueue: false`
+ *     + `lazyConnect: false`) caused the first `.ping()` to fire before the TCP
+ *     handshake completed — every check returned disconnected because the offline
+ *     queue refused the command and we then nullified the client. Removed those
+ *     options; ioredis defaults handle reconnection sanely.
  *   - Wave 2 may refactor to a dedicated RedisHealthIndicator (Terminus style).
  */
 @Controller('health')
@@ -70,23 +76,30 @@ export class HealthController implements OnApplicationShutdown {
   private async pingRedis(): Promise<HealthResponse['redis']> {
     try {
       if (!this.redis) {
-        const redisCfg = this.config.get('app.redis') as {
-          host: string;
-          port: number;
-          db: number;
-        };
+        const redisCfg = this.config.get<RedisConfig>('app.redis');
+        if (!redisCfg) {
+          this.log.error('app.redis config missing — check src/config/configuration.ts');
+          return 'disconnected';
+        }
         this.redis = new Redis({
           host: redisCfg.host,
           port: redisCfg.port,
           db: redisCfg.db,
-          lazyConnect: false,
-          maxRetriesPerRequest: 1,
-          enableOfflineQueue: false,
+          // Default ioredis options:
+          //   - lazyConnect: false   → connect on construction
+          //   - maxRetriesPerRequest: 20 (default) → ping waits for reconnect
+          //   - enableOfflineQueue: true (default) → ping queued if briefly disconnected
+          // These defaults let the first .ping() succeed as soon as the TCP
+          // handshake completes, even if the host is starting up concurrently.
         });
         this.redis.on('error', (err) => {
           this.log.warn(`redis client error: ${err.message} — health will report degraded`);
         });
+        this.redis.on('ready', () => {
+          this.log.log('redis client ready');
+        });
       }
+
       const result = await Promise.race<string>([
         this.redis.ping(),
         new Promise<string>((_, reject) =>
@@ -95,10 +108,9 @@ export class HealthController implements OnApplicationShutdown {
       ]);
       return result === 'PONG' ? 'connected' : 'disconnected';
     } catch {
-      if (this.redis) {
-        this.redis.disconnect();
-        this.redis = null;
-      }
+      // Do NOT disconnect+null the client on a single failed ping — ioredis
+      // already retries internally. Nullifying forces a new TCP handshake
+      // on the next request, which re-introduces the timing race we just fixed.
       return 'disconnected';
     }
   }

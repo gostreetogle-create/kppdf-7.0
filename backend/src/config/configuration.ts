@@ -1,5 +1,18 @@
 import { registerAs } from '@nestjs/config';
 
+/** Redis connection shape — exported so other modules (health, queue, cache) get the same typed contract. */
+export interface RedisConfig {
+  host: string;
+  port: number;
+  db: number;
+}
+
+/** Mongo connection shape — exported for the same reason as RedisConfig. */
+export interface MongoConfig {
+  uri: string;
+  dbName: string;
+}
+
 /**
  * Typesafe env loader. Reachable via `ConfigService.get('app')`.
  *
@@ -14,13 +27,13 @@ export const configuration = registerAs('app', () => ({
   mongo: {
     uri: required('MONGO_URI'),
     dbName: process.env.MONGO_DB_NAME ?? 'kppdf-7',
-  },
+  } as MongoConfig,
 
   redis: {
     host: process.env.REDIS_HOST ?? 'localhost',
     port: Number(process.env.REDIS_PORT ?? 6379),
     db: Number(process.env.REDIS_DB ?? 0),
-  },
+  } as RedisConfig,
 
   uploadsDir: process.env.UPLOADS_DIR ?? './uploads',
   thumbnails: {
