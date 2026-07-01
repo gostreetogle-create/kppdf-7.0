@@ -40,13 +40,55 @@
 - **ID монотонный:** `PSL-001`, `PSL-002`, … — никогда не переиспользовать.
 - **Сортировка:** новые записи **сверху** (свежее = выше).
 - **Не редактировать старые записи** — для изменений задним числом создавать новую запись со ссылкой на старую («см. PSL-XXX, обновлено»).
-- **Связи с OQ:** каждое инкрементальное изменение, закрывающее дыру, должно ссылаться на OQ-XXX (когда OQ-инфраструктура появится).
+- **Связи с OQ:** каждое инкрементальное изменение, закрывающее дыру, должно ссылатьься на OQ-XXX (когда OQ-инфраструктура появится).
 
 ---
 
 ## 1. Журнал изменений
 
 > Самые новые записи — сверху. Монотонная нумерация PSL-NNN.
+
+### PSL-004 — Stage 4 Wave 1 Bootstrap (NestJS scaffold) + DOMAIN-MODEL split [2026-07-01]
+
+| Поле | Значение |
+|---|---|
+| **Дата** | 2026-07-01 |
+| **ID** | PSL-004 |
+| **Тип** | `structure` (Backend Bootstrap = новый кодовый модуль) + `critical_fix` (DOMAIN-MODEL >400 split) |
+| **Модуль** | `Универсально` (новый модуль `backend` для Stage 4) |
+| **Автор** | Buffy / MM3 |
+| **Связанные OQ / PSL** | PSL-002 (backend plan §ARCHITECTURE/CHECKLIST), PSL-003 (.gitignore создан в этой же сессии; теперь расширен `**/.env`) |
+| **Описание** | **Wave 1 Bootstrap выполнен** per docs/ANALYSIS.md §4.4 + docs/backend/CHECKLIST.md §6.1 row 4.A. Создана папка `backend/` с NestJS 11 scaffold (18 файлов, ~1150 строк):<br>• `package.json` — NestJS 11 + Mongoose 8 + BullMQ 5 + ioredis 5 + passport-jwt 4 + babel/vitest tooling<br>• `tsconfig.json` + `tsconfig.build.json` — strict mode, ES2022, decorators<br>• `nest-cli.json`, `.env.example`, `.gitignore` (per-module), `README.md`<br>• `docker-compose.yml` + `docker/mongo-entrypoint.sh` — MongoDB 7 с replica set `rs0` + Redis 7, оба с healthcheck'ами<br>• `src/main.ts` — bootstrap + global ValidationPipe + `/api` prefix<br>• `src/app.module.ts` — ConfigModule (global) + MongooseModule + BullModule + HealthModule; Wave 2/3 модули в комментариях-плейсхолдерах (только parent-agent их подключит per §4.4)<br>• `src/health/health.{module,controller}.ts` — GET `/api/health` с MongoDB readyState + Redis ping (1s timeout); ConfigService-driven; Logger.warn on errors; disconnect+null on ping failure<br>• `src/config/configuration.ts` — `registerAs('app')` + `required()` throws on missing JWT secrets/ADMIN_PASSWORD<br>• `src/common/types/permission-keys.ts` — 14 PERMISSION_KEYS (USERS x3, ROLES x2, ORGANIZATIONS x3, PRODUCTS x4, IMPORTS x2) + ALL_PERMISSION_KEYS<br>• `src/common/decorators/permissions.decorator.ts` — `@Permissions(keys)` SetMetadata<br>• `src/common/guards/rbac.guard.ts` — admin auto-resolve (R3), ForbiddenException на отсутствующие права, JwtUserPayload interface exported<br>• `src/bootstrap/admin-seed.ts` — placeholder stub для Wave 2.A + static `hashPassword` helper<br><br>**DOMAIN-MODEL split** (hard-limit fix per PSL-002): монолит 444 строки → `schemas/01-core-users.md` (149) + `schemas/02-business-domain.md` (159) + `schemas/03-storage-and-import.md` (161) + `DOMAIN-MODEL.md` обрезан до 95 строк INDEX. Итого 564 строки в 4 файлах, каждый ≤ 200. Content UNCHANGED, только переупаковка.<br><br>**Применены 4 правки code-reviewer** (3 BLOCKING + 1 MINOR после первого review-раунда):<br>1. Root `.gitignore` — добавлены `**/.env`, `**/*.pem`, `**/*.key`, `**/*.crt`, `**/uploads/`, `**/dist/`, `**/coverage/` explicit nested patterns (BLOCKING #1: secret leak risk для `backend/.env`).<br>2. `health.controller.ts` — убран сломанный `@InjectConnection('default')` from @nestjs/mongoose (только для Mongoose connection); заменён на прямой `ioredis` client + `.ping()` через ConfigService (BLOCKING #2: `/api/health` всегда возвращал `status: "degraded"`).<br>3. `health.controller.ts` — `Logger.warn` вместо silent error swallow (operability fix).<br>4. `health.controller.ts` — `disconnect() + null` в catch блоке для следующих запросов (no half-broken client reuse).<br>5. `app.module.ts` — добавлен NOTE комментарий о `AdminSeedService` deferred registration (Wave 2.A регистрирует через AuthModule). |
+| **Причина** | PO запросил «начать проект по чеклистам» (режим max-parallel, no chaos). Stage 4 Wave 1 Bootstrap — фундамент без которого Stage 3 (Моделировщик) не может писать схемы, а Waves 2-3 не имеют структуры для модулей. Параллельно: должен быть DOMAIN-MODEL split — иначе Stage 3 Моделировщик работает с 444-строчным монолитом, превышающим hard-limit 400. Per `docs/AGENT-METHOD.md §0.1` «новая политика» + «создание нового модуля» = пишем в LOG. |
+| **Затронутые файлы** | 🆕 Созданы (22) в этом turn (PSL-004):<br>• `backend/` — 18 файлов (см. список выше)<br>• `docs/backend/schemas/01-core-users.md` (149 строк)<br>• `docs/backend/schemas/02-business-domain.md` (159 строк)<br>• `docs/backend/schemas/03-storage-and-import.md` (161 строк)<br>📝 Изменён (1):<br>• `docs/backend/DOMAIN-MODEL.md` — переписан из 444-строчного монолита в 95-строчный INDEX<br>📝 Изменён (1) в связанном turn (PSL-003 fixup):<br>• `.gitignore` (root) — расширен nested patterns<br><br>**Деферреd (Wave 2.A):**<br>• `backend/src/modules/auth/` — AuthModule, JWT strategies, login endpoint<br>• `backend/src/modules/users/`, `roles/` — CRUD по RBAC-SCHEME<br>• `backend/src/modules/organizations/`, `products/` — domain CRUD<br>• `backend/src/modules/storage/`, `ingestion/` — по Wave 2-3 плану<br><br>**Деферреd nit (minor, optional):**<br>Code-reviewer предложил использовать `ConfigService.get<RedisConfig>('app.redis')` (generic typing) вместо `as { host, port, db }` cast. Не blocking — `RedisConfig` interface можно определить в Wave 2 при создании первого consumers. |
+
+### PSL-003 — `.gitignore` создан + решения по итогам `ANALYSIS.md` [2026-07-01]
+
+| Поле | Значение |
+|---|---|
+| **Дата** | 2026-07-01 |
+| **ID** | PSL-003 |
+| **Тип** | `critical_fix` (отсутствовал git hygiene) + `process` (defer-правила для 7 других пунктов анализа) |
+| **Модуль** | `Универсально` |
+| **Автор** | Buffy / MM3 |
+| **Связанные OQ / PSL** | PSL-002 (backend план), PSL-001 (методология `AGENT-METHOD.md §5.3`) |
+| **Описание** | Создан корневой `.gitignore` (**~110 строк, 63 активных правила, 14 категорий**) как P0-фикс по итогам внешнего анализа (`docs/ANALYSIS.md §3.4`). Покрывает: (1) `node_modules/`; (2) Angular `frontend/dist/`, `frontend/.angular/`, `frontend/coverage/`; (3) planned NestJS `backend/*`; (4) Secrets `.env`, `*.pem`, `*.key`, `*.crt`; (5) Storage `uploads/`, `storage/`; (6) Logs `*.log`; (7) IDE `.idea/`, `.vscode/`; (8) OS `.DS_Store`, `Thumbs.db`; (9) Build `dist/`, `build/`, `*.tsbuildinfo`; (10) Coverage; (11) Cache; (12) Misc; (13) STUB hygiene per `AGENT-METHOD §5.3`.<br><br>**Зафиксированные решения по 7 другим пунктам `ANALYSIS.md`:**<br>• §3.5 → **resolved в PSL-002** (RBAC-SCHEME + BUSINESS-RULES созданы).<br>• §3.6 MCP SDK + zod-to-json-schema → **NOT direct deps** → no action.<br>• §3.7 TS 6.0.2 → **Angular 22 requires** → no action.<br>• §3.3 testing → **defer to Stage 6**.<br>• §3.8 CI/CD → **defer to Stage 4** (apply после bootstrap).<br>• §3.9 ESLint → **defer to Stage 2**.<br>• §3.2 App layout → **defer to Phase 2**.<br>• §5.x Архитектурные notes → **apply при Stage 4 implementation** as inline-решения. |
+| **Причина** | Проект был без `.gitignore` несмотря на наличие `frontend/node_modules/` (риск коммита). Это **critical_fix** по классификации §0.1 (новая политика «git hygiene enforced at root»). Defer-decisions зафиксированы чтобы избежать дрейфа. |
+| **Затронутые файлы** | 🆕 Создан (1):<br>• `.gitignore` — корневой, ~110 строк → расширен до ~130 строк в PSL-004 turn (добавлены nested `**/` patterns для backend/).<br>📝 Изменён/Без изменений (валидировано):<br>• `frontend/package.json`, `frontend/angular.json` — для §3.6/3.7. |
+
+### PSL-002 — Создание `docs/backend/` — план реализации backend [2026-07-01]
+
+| Поле | Значение |
+|---|---|
+| **Дата** | 2026-07-01 |
+| **ID** | PSL-002 |
+| **Тип** | `structure` (план backend stack + domain model + RBAC) |
+| **Модуль** | `Универсально` (to-be `backend`) |
+| **Автор** | Buffy / MM3 |
+| **Связанные OQ / PSL** | PSL-001 (методология `/docs/` как основа для этого плана) |
+| **Описание** | Создана папка `docs/backend/` с планом реализации backend для kppdf-7.0 (greenfield). **Стек согласован:** NestJS + Mongoose + MongoDB + BullMQ + Redis + LocalDisk storage. **6 файлов** в `docs/backend/` (~1.5k строк): README, ARCHITECTURE, DOMAIN-MODEL, CHECKLIST, RBAC-SCHEME, BUSINESS-RULES. **Доменная модель:** 7 сущностей — Permission, Role (status machine), User, Organization (legalType + partyType), Product (copy-flow + duplicate-protection), Photo (variants cluster), ImportJob (state-machine). **RBAC:** 14 permissions, 3 default roles. **Бизнес-правила:** 34 правила cross-field валидации. **Pipeline:** 7 стадий (Stage 4 разделён на 5 streams 4.A-4.E). |
+| **Причина** | PO запросил backend с MongoDB и гибкой архитектурой для быстрой загрузки данных (Excel/JSON/API) + RBAC + базовые таблицы. Логика вынесена из kppdf-6.0 только как reference схем и очищена от KPPDF-CRM-специфики. |
+| **Затронутые файлы** | 🆕 Созданы (6) в `docs/backend/`:<br>• `README.md`, `ARCHITECTURE.md`, `DOMAIN-MODEL.md` (444 стр → разделён в PSL-004), `CHECKLIST.md`, `RBAC-SCHEME.md`, `BUSINESS-RULES.md` |
 
 ### PSL-001 — Создание методологической документации `/docs/` [2026-07-01]
 
@@ -58,9 +100,9 @@
 | **Модуль** | `Универсально` |
 | **Автор** | Buffy / MM3 |
 | **Связанные OQ** | — |
-| **Описание** | Создана папка `/docs/` с 8 файлами методологии, извлечёнными и очищенными от KPPDF-бизнес-специфики из проекта-источника `kppdf-6.0`. Документация предоставляет ИИ-агенту самодостаточный инструментарий для работы с greenfield-проектом. |
-| **Причина** | Проект стартует в режиме greenfield. Необходима единая методология для всех будущих ИИ-агентов и людей, чтобы (а) все знали свои роли и границы, (б) контекст не терялся, (в) чек-листы соблюдались, (г) инкрементальные изменения фиксировались. Без методологии — типичная боль: AI лезет в чужие файлы, ломает сделанное, не помнит что и почему было решено. |
-| **Затронутые файлы** | 🆕 Созданы (8):<br>• `docs/00_START_HERE.md` (~140 строк) — slim master входа для ИИ<br>• `docs/AGENT-ROLES.md` (~180 строк) — 7 ролей + pipeline + Правило 3.1 (универсальный)<br>• `docs/AGENT-METHOD.md` (~210 строк) — метод прохождения + STUB + правила 3.1 / 4.1 / 5.1 / 5.3 / 5.4<br>• `docs/AGENT-FORMAT.md` (~150 строк) — 8 принципов П1–П8 + правила форматирования + 11 анти-паттернов A1–A11 (универсальный)<br>• `docs/AGENT-REVIEW.md` (~80 строк) — MUST / SHOULD чек-лист + hard limit 80–250 / 400 (универсальный)<br>• `docs/AGENT-PROMPTS.md` (~180 строк) — 5 промпт-шаблонов для запуска ролей + табличный формат отчёта Координатора<br>• `docs/CHECKLIST.md` (~220 строк) — мастер-навигатор, маршруты «если хочешь X → читай Y», протокол возобновления<br>• `docs/PROJECT-STATE-LOG.md` (этот файл) — журнал PSL-NNN + первая запись<br>📝 Изменён (1):<br>• `README.md` (корень проекта) — обновлён для навигации людей<br>🆕 Создана (frontend):<br>• `frontend/` — Angular 22.0.4 scaffold (см. предыдущий шаг) |
+| **Описание** | Создана папка `/docs/` с 8 файлами методологии, извлечёнными и очищенными от KPPDF-бизнес-специфики из проекта-источника `kppdf-6.0`. |
+| **Причина** | Greenfield-проект требует единой методологии для всех будущих ИИ-агентов и людей (роли, границы, контекст, чек-листы, audit trail). |
+| **Затронутые файлы** | 🆕 Созданы (8):<br>• `docs/00_START_HERE.md`, `docs/AGENT-ROLES.md`, `docs/AGENT-METHOD.md`, `docs/AGENT-FORMAT.md`, `docs/AGENT-REVIEW.md`, `docs/AGENT-PROMPTS.md`, `docs/CHECKLIST.md`, `docs/PROJECT-STATE-LOG.md`<br>📝 Изменён (1):<br>• `README.md` (корневой) — навигация людей |
 
 ---
 
@@ -98,4 +140,7 @@
 
 | Версия | Дата | Что |
 |---|---|---|
-| 1.0 | 2026-07-01 | Создание журнала. Содержит 4 раздела: §0 схема записи, §1 журнал (1 запись PSL-001), §2 шаблон, §3 related docs. Монотонная нумерация PSL-NNN начинается с 001. |
+| 1.3 | 2026-07-01 | Добавлена запись PSL-004 — Stage 4 Wave 1 Bootstrap (22 файла в `backend/` + DOMAIN-MODEL split: монолит 444 → INDEX 95 + 3 schemas/`~150 строк каждый) + 4 code-reviewer правки. Все hard-limit в норме. Деферред nit 1 (RedisConfig interface) — optional. |
+| 1.2 | 2026-07-01 | Добавлена PSL-003 (critical_fix `.gitignore` + 7 defer-decisions). |
+| 1.1 | 2026-07-01 | Добавлена запись PSL-002 (backend план v1.0–1.2). |
+| 1.0 | 2026-07-01 | Создание журнала. §0 схема записи, §1 журнал (PSL-001), §2 шаблон, §3 related docs. |

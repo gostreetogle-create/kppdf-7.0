@@ -1,0 +1,52 @@
+version: '3.8'
+
+# Per docs/backend/ARCHITECTURE.md §5 — MongoDB replica set required for multi-document transactions.
+# Per docs/backend/CHECKLIST.md §6.1 row 4.A — Docker Compose up brings MongoDB + Redis online.
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: kppdf7-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: kppdf-7
+    volumes:
+      - mongo_data:/data/db
+      - ./docker/mongo-entrypoint.sh:/docker-entrypoint-initdb.d/init-replica.sh:ro
+    networks:
+      - kppdf7-net
+    healthcheck:
+      test: |
+        mongosh --quiet --eval "
+          try { rs.status().ok; quit(0); }
+          catch (e) { quit(1); }
+        "
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    container_name: kppdf7-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - kppdf7-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mongo_data:
+  redis_data:
+
+networks:
+  kppdf7-net:
+    driver: bridge
