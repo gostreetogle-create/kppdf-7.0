@@ -1,0 +1,47 @@
+{
+  "name": "kppdf-7.0",
+  "version": "0.1.0",
+  "description": "kppdf-7.0 monorepo orchestrator (Angular 22 + NestJS 11 + MongoDB + Redis)",
+  "private": true,
+  "scripts": {
+    "launch": "bash start.sh",
+    "launch:dev": "bash start.sh",
+    "launch:setup": "bash start.sh setup",
+    "launch:start": "bash start.sh start",
+    "launch:stop": "bash start.sh stop",
+    "launch:status": "bash start.sh status",
+    "launch:logs": "bash start.sh logs",
+    "launch:reset": "bash start.sh reset",
+    "launch:help": "bash start.sh --help",
+    "launch:win": "powershell -ExecutionPolicy Bypass -File start.ps1",
+    "launch:win:start": "powershell -ExecutionPolicy Bypass -File start.ps1 start",
+    "launch:win:stop": "powershell -ExecutionPolicy Bypass -File start.ps1 stop",
+    "backend:install": "cd backend && npm install",
+    "backend:dev": "cd backend && npm run start:dev",
+    "backend:build": "cd backend && npm run build",
+    "backend:start": "cd backend && npm run start",
+    "backend:prod": "cd backend && npm run start:prod",
+    "backend:typecheck": "cd backend && npm run typecheck",
+    "backend:test": "cd backend && npm test",
+    "backend:docker:up": "cd backend && npm run docker:up",
+    "backend:docker:down": "cd backend && npm run docker:down",
+    "backend:docker:logs": "cd backend && npm run docker:logs",
+    "frontend:install": "cd frontend && npm install",
+    "frontend:dev": "cd frontend && npm start",
+    "frontend:build": "cd frontend && npm run build",
+    "frontend:watch": "cd frontend && npm run watch",
+    "frontend:test": "cd frontend && npm test"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
+  "keywords": [
+    "kppdf",
+    "angular",
+    "nestjs",
+    "mongodb",
+    "bullmq",
+    "greenfield"
+  ]
+}

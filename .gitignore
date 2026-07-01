@@ -1,0 +1,131 @@
+# ============================================================
+# kppdf-7.0 — Root .gitignore
+# Created 2026-07-01 (PSL-003) per docs/ANALYSIS.md §3.4
+# Updated 2026-07-01 (PSL-004) — explicit `**/.env` nested patterns
+# Updated 2026-07-01 (PSL-005) — `.run/` for launcher logs + pid files
+# ============================================================
+
+# ─── Dependencies ────────────────────────────────────────────
+node_modules/
+**/node_modules/
+.pnp/
+.pnp.js
+
+# ─── Angular (frontend/) ─────────────────────────────────────
+frontend/dist/
+frontend/.angular/
+frontend/.angular/cache/
+frontend/coverage/
+frontend/tsconfig.tsbuildinfo
+
+# ─── NestJS / Backend (backend/, planned Stage 4) ─────────────
+backend/dist/
+backend/coverage/
+backend/uploads/
+backend/logs/
+**/dist/
+**/coverage/
+
+# ─── Runtime data (launcher artifacts: logs + pid files) ──────
+# Created by start.sh / start.ps1 — NOT source files.
+# git check-ignore: tests/.run/* should NOT be staged.
+.run/
+**/.run/
+logs/
+backend/logs/
+frontend/logs/
+
+# ─── Secrets & env files (любая вложенность) ─────────────────
+.env
+**/.env
+.env.local
+**/.env.local
+.env.*.local
+**/.env.*.local
+.env.development
+.env.production
+*.pem
+**/*.pem
+*.key
+**/*.key
+*.crt
+**/*.crt
+secrets/
+
+# ─── Storage / uploads (фото и другие медиа) ─────────────────
+uploads/
+storage/
+**/uploads/
+**/storage/
+
+# ─── Logs ────────────────────────────────────────────────────
+*.log
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ─── IDE / Editor ────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*.iml
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
+nbproject/
+nb-configuration.xml
+
+# ─── OS noise ────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ─── Build artifacts ─────────────────────────────────────────
+dist/
+build/
+out/
+tmp/
+*.tsbuildinfo
+*.tgz
+*.tar.gz
+
+# ─── Test coverage / artifacts ───────────────────────────────
+coverage/
+.nyc_output/
+*.lcov
+.jest-cache/
+.eslintcache
+
+# ─── Cache directories ───────────────────────────────────────
+.cache/
+.parcel-cache/
+.turbo/
+.next/
+.webpack/
+
+# ─── TypeScript ──────────────────────────────────────────────
+*.d.ts.bak
+
+# ─── Misc ────────────────────────────────────────────────────
+.history/
+*.bak
+*.tmp
+*.orig
+*.rej
+
+# ─── Local experimental files (rule 3.1 STUB hygiene) ───────
+docs/.STUB/
+docs/**/.STUB-*-local.md
+
+# ─── NOTE: track .env.example (template, NOT secrets) ─────────
+# .env.example is intentionally NOT in this ignore list —
+# it's a tracked file used as a template for new developers.
