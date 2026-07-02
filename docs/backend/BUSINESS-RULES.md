@@ -8,7 +8,7 @@
 
 ## 0. Контекст
 
-Правила разделены по сущностям. Каждое правило: **номер** → **условие** → **следствие** → **где проверяется** (schema / service / оба) → **пример**.
+Правила разделены по сущностям. Каждое правило: **номер** → **условие** → **следствие** → **где проверяется** (schema / service / оба) → **пример** → **[статус]** (✅ реализовано / 📋 запланировано / ❌ не реализовано с указанием причины).
 
 **Принцип:** правила проверяются ТОЛЬКО на backend (frontend валидация — UX hint, но не security). Mongoose schema validators + class-validator + service-layer assertions.
 
@@ -21,7 +21,7 @@
 - **Условие:** всегда при создании.
 - **Следствие:** `null/undefined/''` → 400 ValidationError.
 - **Где:** Mongoose schema (`required: true`) + class-validator.
-- **Пример:** `'ООО Ромашка'` ОК, `''` → reject.
+- **[✅]** `CreateOrganizationDto.name` — `@MinLength(2) @MaxLength(255)`.
 
 ### Правило BR-ORG-2: `legalType` определяет видимый набор полей
 
@@ -30,41 +30,36 @@
   - `ООО` → видны `inn`, `kpp`, `ogrn`, `directorName`, `registrationDate`.
   - `ИП` → видны `inn`, `ogrnip`, `ipRegistrationDate`.
   - `ФЛ` → видны `passportSeries`, `passportNumber`, `passportIssuedBy`, `passportIssuedDate`.
-- **Где:** schema (Mongoose conditional schema per discriminator) + UI dynamic form + service-layer projection.
+- **Где:** ~~schema (Mongoose conditional schema per discriminator)~~ → **[📋]** плоская схема. Все поля опциональны. UI-логика (dynamic form) — не реализована в MVP. Service-layer projection — deferred.
+- **[✅]** Schema: все поля существуют. **[📋]** Discriminator / UI фильтрация — deferred.
 
 ### Правило BR-ORG-3: `inn` формат зависит от `legalType`
 
 - **Условие:** ИНН должен соответствовать типу.
 - **Следствие:**
   - `ООО` или `ИП` → ИНН = 10 или 12 цифр (regex `^\d{10}$|^\d{12}$`).
-  - `ФЛ` → ИНН может отсутствовать (не обязательное для частного лица).
-- **Где:** service-layer validator (перед save).
-- **Пример нарушения:** ИП с ИНН='' → reject.
+  - `ФЛ` → ИНН может отсутствовать.
+- **Где:** ~~service-layer validator~~ → **[❌]** Не реализован. Организации создаются без валидации ИНН (`@IsString()` только в DTO, regex отсутствует).
+- **GAP-001:** Добавить `@Matches(/^\d{10}$|^\d{12}$/)` в DTO + OrganizationsService.
 
 ### Правило BR-ORG-4: `partyTypes` минимум 1
 
-> **Следствие:** `partyTypes: []` при создании → 400 ValidationError "организация должна иметь хотя бы одну роль (supplier/seller/buyer)".
-
-- **Где:** schema (`validate: { validator: (v) => Array.isArray(v) && v.length >= 1 }`) → Applied per code-reviewer fixed.
-- **Пример:** `[SUPPLIER]` ОК, `[]` → reject.
+- **[✅]** Schema `validate` + DTO `@ArrayNotEmpty({ message: ... })`. Реализовано.
 
 ### Правило BR-ORG-5: `partyTypes` могут быть изменены позже
 
-> **Не locked-on-create:** организация ИП Иванов сначала `BUYER`, потом становится ещё и `SUPPLIER` → можно добавить без архивирования старой записи.
-
-- **Следствие:** `PATCH /api/organizations/:id` принимает изменения partyTypes.
+- **[✅]** `PATCH /api/organizations/:id` принимает изменения partyTypes.
 
 ### Правило BR-ORG-6: `photoIds` опциональны, но могут быть множественными
 
 - **Условие:** 0+ фото (в отличие от Product, где ≥1).
-- **Следствие:** `photoIds: undefined` или `[]` ОК; `photoIds.length > 1` ОК; `photoIds[0]` должен быть `ORIGINAL`-вариантом.
-- **Где:** schema не enforces min, но service-layer ожидает valid Photo refs.
+- **Следствие:** `photoIds: undefined` или `[]` ОК; `photoIds.length > 1` ОК.
+- ~~`photoIds[0]` должен быть `ORIGINAL`-вариантом~~ → **[❌]** Валидация не реализована (нет Photo сервиса в Stage 4.C).
+- **[✅]** Schema: `default: []`, не required.
 
 ### Правило BR-ORG-7: `COPY` запрещена операция для Organization
 
-- **Источник:** явное требование PO.
-- **Следствие:** endpoint `POST /api/organizations/:id/copy` НЕ существует. Frontend не показывает кнопку.
-- **Где:** нет в коде + RBAC-PERMISSION EXCLUDED (никогда не будет `ORGANIZATIONS_COPY`).
+- **[✅]** Endpoint `POST /api/organizations/:id/copy` НЕ существует. Нет `ORGANIZATIONS_COPY` permission.
 
 ---
 
@@ -72,55 +67,42 @@
 
 ### Правило BR-PRD-1: `(name, sku)` unique compound
 
-- **Условие:** always.
-- **Следствие:** попытка создать Product с существующей парой → 409 ConflictError.
-- **Где:** Mongoose `index({ name: 1, sku: 1 }, { unique: true })`.
-- **Пример:** уже есть `('Шуруп 3x20', 'SH-3-20')` → создать такой же → 409.
+- **[✅]** Mongoose `index({ name: 1, sku: 1 }, { unique: true })`. В service — catch `11000` → 409 ConflictException.
 
 ### Правило BR-PRD-2: `name` обязателен
 
-- **Условие:** при создании.
-- **Следствие:** → 400.
-- **Где:** schema (`required: true`).
+- **[✅]** Schema `required: true` + DTO `@MinLength(2)`.
 
 ### Правило BR-PRD-3: `sku` обязателен + формат
 
 - **Условие:** при создании.
 - **Следствие:** `''` → reject. Формат: 3–32 символа, `[A-Z0-9-]` (uppercase letters, digits, hyphen). Regex: `^[A-Z0-9-]{3,32}$`.
-- **Где:** schema + class-validator.
-- **Пример:** `'SH-3-20'` ОК, `'sh-3'` → reject (lowercase).
+- **Где:** ~~schema + class-validator~~ → **[✅]** Только class-validator (`@Matches()`). Schema — `required: true` без regex (DTO ловит раньше).
+- **[✅]** `CreateProductDto.sku` — `@MinLength(3) @MaxLength(32) @Matches(/^[A-Z0-9-]+$/)`.
 
 ### Правило BR-PRD-4: `photoIds` минимум 1 (ОБЯЗАТЕЛЬНО)
 
 - **Условие:** при создании и любом update.
-- **Следствие:** → 400 ValidationError "Товар должен иметь минимум 1 фото".
-- **Где:** schema-level custom validator.
-- **Пример:** `photoIds: []` → reject. `photoIds: [originalId]` → ОК.
+- **Следствие:** → 400 ValidationError.
+- **Где:** schema-level custom validator + DTO.
+- **[✅]** Schema: `validate: { validator: (v) => Array.isArray(v) && v.length >= 1 }`. DTO: `@ArrayNotEmpty()`.
+- **[📋]** Для `update` — `@IsOptional()` на `UpdateProductDto.photoIds` **снимает обязательность**. Если `photoIds` не передан в `PATCH`, валидация не срабатывает. **Решение:** при update photoIds передавать обязательно + другие поля опционально. Сейчас — допустимо не менять фото.
 
 ### Правило BR-PRD-5: `price ≥ 0`, `cost ≥ 0`
 
-- **Условие:** при создании и update.
-- **Следствие:** negative → 400.
-- **Где:** schema-level min validator.
+- **[✅]** Schema `min: 0` + DTO `@Min(0)`. Реализовано.
 
 ### Правило BR-PRD-6: `COPY` создаёт НОВЫЙ документ с автогенерированным sku
 
-- **Условие:** `POST /api/products/:id/copy`.
-- **Следствие:**
-  - Берётся оригинал, photoIds копируются (reuse refs, **не дублируются файлы**).
-  - `name = '<orig> (копия)'` или `request.name` если передан.
-  - `sku = '<orig>-COPY-<timestamp_base36>'` или `request.sku` (если передан И проходит BR-PRD-3 format).
-  - `copiedFromProductId = original._id` (audit).
-- **Где:** ProductsService.copy().
-- **Edge-case:** если передан `request.sku`, проверка BR-PRD-3 + BR-PRD-1 (если такая пара уже есть → 409).
+- **[✅]** `POST /api/products/:id/copy`. Auto-sku: `{sku}-COPY-{base36}`. Auto-name: `{name} (копия)`. `copiedFromProductId` → original.\_id.
 
 ### Правило BR-PRD-7: COPY не дублирует фото-файлы, только ссылки
 
-- **Следствие:** `photoIds: [original.photoIds]` копируются как ObjectId refs в новый document. Сами Photo-документы остаются в `_photos` (один кластер shared между двумя Product'ами).
+- **[✅]** `photoIds: original.photoIds` — shared ObjectId refs.
 
 ### Правило BR-PRD-8: Soft-delete через `deletedAt`
 
-- **Следствие:** `DELETE /api/products/:id` → ставит `deletedAt: new Date()`. Документ остаётся в БД, query'ы фильтруют по `deletedAt: null`.
+- **[✅]** `DELETE /api/products/:id` → `deletedAt: new Date()`. Query'ы фильтруют `deletedAt: null`.
 
 ---
 
@@ -128,47 +110,41 @@
 
 ### Правило BR-USR-1: `username` 3+ символа, уникальный
 
-- **Условие:** создание и update.
-- **Следствие:** валидация regex + unique index.
-- **Где:** schema + service-layer.
+- **[✅]** Schema `unique: true` index + DTO `@MinLength(3) @Matches(/^[a-zA-Z0-9_]+$/)`.
 
 ### Правило BR-USR-2: `passwordHash` обязателен, plain password никогда не хранится
 
-- **Условие:** всегда при создании.
-- **Следствие:** при регистрации plain пароль → bcrypt 12 rounds → `passwordHash`. Plain пароль отбрасывается сразу.
+- **[✅]** `bcrypt.hash(password, 12)`. Plain отбрасывается. API response — `passwordHash` удалён через `toJSON` transform.
 
 ### Правило BR-USR-3: minimum password length 8
 
-- **Условие:** при создании / смене пароля.
-- **Следствие:** < 8 → reject 400.
+- **[✅]** `CreateUserDto.password` — `@MinLength(8)`. `UpdateUserDto.password` — `@MinLength(8)`.
 
 ### Правило BR-USR-4: soft-deleted user не может залогиниться
 
-- **Условие:** JWT validation.
-- **Следствие:** `user.deletedAt !== null` → 401.
-- **Где:** JwtStrategy.
+- **[✅]** `JwtStrategy.validate()` — `if (!user || user.deletedAt) throw UnauthorizedException`.
 
 ### Правило BR-USR-5: admin role — `isSystemRole: true`, нельзя удалить/переименовать
 
-- **Следствие:** DELETE/PATCH на role.name=admin → 403.
-- **Где:** RolesService guard + UI hide buttons.
+- **[✅]** `RolesService.update/remove` — R2 check. UI — кнопки скрыты для system role.
 
 ### Правило BR-USR-6: Role state machine (draft → active → archived)
 
-- **Следствия:** см. `RBAC-SCHEME.md` §2 (полная state-машина).
+- **[✅]** Schema: `enum RoleStatus { DRAFT, ACTIVE, ARCHIVED }`. **[📋]** UI: нет явной смены статуса через интерфейс (только через API PATCH). Нет отображения DRAFT в UI (розовая рамка).
 
-### Правило BR-USR-7: WRITE grants imply READ (запрещено без READ)
+### Правило BR-USR-7: WRITE grants imply READ
 
-- **Следствие:** если permissions[] содержит `PRODUCTS_WRITE`, должен содержать и `PRODUCTS_READ`. Иначе → 400 при сохранении role.
+- **[✅]** `RolesService.validateWriteImpliesRead()` — backend. Frontend: auto-tick READ при tick WRITE.
 
 ### Правило BR-USR-8: admin permissions auto-resolve (нельзя снять у себя)
 
-- **Следствие:** role 'admin' имеет пустой `permissions: []` в БД, но effective permissions = all 14 keys (см. `RBAC-SCHEME.md` §3.3).
+- **[✅]** `JwtStrategy`: `role.name === 'admin' ? ALL_PERMISSION_KEYS : role.permissions`. В БД — пустой массив.
 
 ### Правило BR-USR-9: cannot grant more than own set (Ownership Rule)
 
 - **Следствие:** кастомная роль не может иметь permissions, которых нет у присваивающего.
-- **Где:** RolesService.create/update — check requesting user's effective permissions ⊇ requested permissions.
+- **Где:** ~~RolesService.create/update~~ → **[❌] НЕ РЕАЛИЗОВАНО.** `RolesService` не имеет доступа к контексту запроса (JWT user). Требует рефакторинга: `@Req() user` → RolesController → RolesService.
+- **GAP-002:** R1 Ownership Rule — добавить inject Request в RolesController, передать effectivePermissions в RolesService.create/update.
 
 ---
 
@@ -176,24 +152,23 @@
 
 ### Правило BR-PHO-1: каждый variant принадлежит кластеру
 
-- **Следствие:** `parentPhotoId !== null` для MEDIUM/THUMBNAIL/LARGE; `linkedPhotoId` всегда задано (= id ORIGINAL того же кластера).
+- **[✅]** Schema: `parentPhotoId`, `linkedPhotoId`. **[📋]** Service-логика создания кластера — deferred до Stage 4.D.
 
 ### Правило BR-PHO-2: ORIGINAL имеет `parentPhotoId: null`, `linkedPhotoId: own_id`
 
-- **Условие:** root of cluster.
+- **[✅]** Schema: `parentPhotoId: default: null`. `linkedPhotoId: required: true`. **[📋]** Логика присвоения — deferred.
 
-### Правило BR-PHO-3: при создании Product/Organization с фото — создавать полный кластер (ORIGINAL + MEDIUM + THUMBNAIL)
+### Правило BR-PHO-3: при создании Product/Organization с фото — создавать полный кластер
 
-- **Условие:** upload.
-- **Следствие:** storage.service создаёт 3 файла (через sharp для MEDIUM и THUMBNAIL), регистрирует 3 Photo-документа с правильными parentPhotoId/linkedPhotoId.
+- **[❌]** Не реализовано. Stage 4.D (Storage) не завершён. Sharp/multer не подключены.
 
-### Правило BR-PHO-4: deletion ORIGINAL → каскад на все варианты с тем же linkedPhotoId
+### Правило BR-PHO-4: deletion ORIGINAL → каскад на все варианты
 
-- **Где:** photo.service.deleteCluster().
+- **[❌]** Не реализовано. Stage 4.D deferred. Service-level cascade не написан.
 
 ### Правило BR-PHO-5: Product.photoIds[] / Organization.photoIds[] ссылаются на ORIGINAL
 
-- **Следствие:** UI показывает thumbnail через `linkedPhotoId` lookup; storage paths выбираются по роли UI (list view → THUMBNAIL, detail view → MEDIUM, full screen → ORIGINAL).
+- **[📋]** Схема допускает. Логика референсов — deferred до Stage 4.D.
 
 ---
 
@@ -201,55 +176,54 @@
 
 ### Правило BR-IMP-1: idempotent import (upsert, не duplicate error)
 
-- **Условие:** worker обрабатывает записи в BullMQ.
-- **Следствие:** `bulkWrite(ops, { upsert: true })` для MongoDB. Если `(name, sku)` уже существует → update, не fail.
+- **[❌]** Не реализовано. Stage 4.E (Ingestion) не завершён. BullMQ worker не написан.
 
-### Правило BR-IMP-2: progress обновляется на каждой порции (chunk)
+### Правило BR-IMP-2: progress обновляется на каждой порции
 
-- **Условие:** worker streaming rows from Excel/JSON.
-- **Следствие:** каждые ~100 rows → `job.progress(n)` → ImportJob.progressPercent обновляется → UI polling через `GET /api/imports/:id` (every 2 sec).
+- **[❌]** Не реализовано.
 
 ### Правило BR-IMP-3: errorLog capped at 1000 entries
 
-- **Условие:** worker видит error при обработке строки.
-- **Следствие:** первые 1000 ошибок сохраняются (`rowIndex`, `errorMessage`, `rawData`). После cap → log "Too many errors, truncate. Total: N+" + status автоматически FAILED.
-- **Где:** worker before-push-to-errorLog check.
-- **Зачем:** MongoDB documents > 16 MB лимит + UX не показывает 10k errors.
+- **[✅]** Schema: `validate: { validator: (v) => Array.isArray(v) && v.length <= 1000 }`. **[❌]** Worker handler с принудительным FAILED — не реализован.
 
 ### Правило BR-IMP-4: status transitions
 
-```
-PENDING → PROCESSING → COMPLETED  (success path)
-PENDING → PROCESSING → FAILED     (>0 errors after cap, OR worker exception)
-PENDING → PROCESSING → CANCELLED  (admin прервал)
-```
-
-- **Запрещённые переходы:** COMPLETED → *, FAILED → CANCELLED, и т.д. (один-way).
+- **[✅]** Schema: enum ImportStatus с правильными значениями. **[❌]** Worker с валидацией переходов — не реализован.
 
 ### Правило BR-IMP-5: ImportJob не удаляется при soft-delete User
 
-- **Условие:** User (который создал import) удалён.
-- **Следствие:** ImportJob.createdByUserId остаётся как ref, но `user.lastLoginAt === null && deletedAt !== null`. UI показывает "[DELETED USER]" рядом с createdByUserId.
+- **[📋]** Schema: `createdByUserId: ObjectId ref 'User'`. Service-level защита — deferred.
 
 ---
 
-## 6. Связанные документы
+## 6. GAP-реестр (запланированные доработки)
+
+| ID | Правило | Описание | Статус |
+|---|---|---|---|
+| GAP-001 | BR-ORG-3 | INN валидация (regex) — не добавлена в DTO + OrganizationsService | 📋 NFR |
+| GAP-002 | BR-USR-9 (R1) | Ownership Rule — не проверяется в RolesService (нет контекста JWT) | 📋 NFR |
+| GAP-003 | BR-PRD-4 | Обязательность photoIds при update — документировать что `@IsOptional()` для PATCH | 📋 Minor |
+| GAP-004 | BR-ORG-2 | Discriminator / conditional schema для legalType — deferred до Stage 6 | 📋 Deferred |
+| GAP-005 | BR-PHO-3/4/5 | Photo cluster creation + cascade delete — весь Stage 4.D | 📋 Deferred |
+| GAP-006 | BR-IMP-1/2/4 | Ingestion worker — весь Stage 4.E | 📋 Deferred |
+
+---
+
+## 7. Связанные документы
 
 - [`README.md`](README.md) — точка входа backend
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — tech stack + module structure
 - [`DOMAIN-MODEL.md`](DOMAIN-MODEL.md) — schema definitions + indexes
 - [`RBAC-SCHEME.md`](RBAC-SCHEME.md) — permission registry + state machine + UI matrix
 - [`CHECKLIST.md`](CHECKLIST.md) — стадии плана
-
-### Корневые
-
-- [`../AGENT-FORMAT.md`](../AGENT-FORMAT.md) — П1–П8 + A1–A11
-- [`../AGENT-REVIEW.md`](../AGENT-REVIEW.md) — MUST/SHOULD чек-лист
+- [`AGENT-FORMAT.md`](../AGENT-FORMAT.md) — П1–П8 + A1–A11
+- [`AGENT-REVIEW.md`](../AGENT-REVIEW.md) — MUST/SHOULD чек-лист
 
 ---
 
-## 7. Версия
+## 8. Версия
 
 | Версия | Дата | Что |
 |---|---|---|
-| 1.0 | 2026-07-01 | Начальный реестр. BR-ORG-1..7 (7 правил), BR-PRD-1..8 (8 правил), BR-USR-1..9 (9 правил), BR-PHO-1..5 (5 правил), BR-IMP-1..5 (5 правил). |
+| 2.0 | 2026-07-02 | Полная валидация аналитиком. Добавлены статусы `[✅]/[📋]/[❌]` для каждого правила. Добавлен §6 GAP-реестр (6 gaps). Исправлены неточности: BR-ORG-2 (discriminator → deferred), BR-ORG-3 (INN regex → gap), BR-PRD-4 (update optional → minor), BR-USR-9 (R1 → gap). |
+| 1.0 | 2026-07-01 | Начальный реестр. 34 правила. |

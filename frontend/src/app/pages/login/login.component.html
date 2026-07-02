@@ -1,0 +1,48 @@
+<div class="login-wrapper">
+  <div class="login-card">
+    <div class="login-header">
+      <div class="logo">KPPDF</div>
+      <h1>Вход в систему</h1>
+      <p class="subtitle">kppdf-7.0 — Панель управления</p>
+    </div>
+
+    <form [formGroup]="form" (ngSubmit)="onSubmit()" class="login-form">
+      @if (error()) {
+        <div class="alert alert-error">{{ error() }}</div>
+      }
+
+      <div class="field">
+        <label for="username">Логин</label>
+        <input
+          id="username"
+          type="text"
+          formControlName="username"
+          placeholder="admin"
+          [class.input-error]="form.get('username')?.invalid && form.get('username')?.touched"
+          autocomplete="username"
+        />
+      </div>
+
+      <div class="field">
+        <label for="password">Пароль</label>
+        <input
+          id="password"
+          type="password"
+          formControlName="password"
+          placeholder="••••••••"
+          [class.input-error]="form.get('password')?.invalid && form.get('password')?.touched"
+          autocomplete="current-password"
+        />
+      </div>
+
+      <button type="submit" class="btn btn-primary" [disabled]="form.invalid || loading()">
+        @if (loading()) {
+          <span class="spinner"></span>
+          Вход...
+        } @else {
+          Войти
+        }
+      </button>
+    </form>
+  </div>
+</div>

@@ -4,15 +4,23 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { BullModule } from '@nestjs/bullmq';
 import { configuration } from './config/configuration';
 import { HealthModule } from './health/health.module';
+import { UsersModule } from './modules/users/users.module';
+import { RolesModule } from './modules/roles/roles.module';
+import { OrganizationsModule } from './modules/organizations/organizations.module';
+import { ProductsModule } from './modules/products/products.module';
+import { StorageModule } from './modules/storage/storage.module';
+import { IngestionModule } from './modules/ingestion/ingestion.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { AdminSeedService } from './bootstrap/admin-seed';
 
 /**
  * Root module for kppdf-7.0 backend.
  *
- * Per docs/ANALYSIS.md §4.4 + docs/backend/CHECKLIST.md §6.1:
- *   - ONLY the Bootstrap agent (this Wave 1) edits this file.
- *   - Wave 2 domain agents (auth, organizations, products, storage) register
- *     their modules via parent-agent coordination (they edit `app.module.ts`
- *     ARE PROHIBITED — see ANALYSIS §4.4 "Конфликт-менеджмент").
+ * Stage 4.B (Admin Area) activated:
+ *   - AuthModule (JWT login + refresh)
+ *   - RolesModule (CRUD + permission assignment)
+ *   - UsersModule (CRUD with role assignment)
+ *   - AdminSeedService (real seed logic)
  */
 @Module({
   imports: [
@@ -45,19 +53,17 @@ import { HealthModule } from './health/health.module';
     // Health check (Wave 1).
     HealthModule,
 
-    // ─── Wave 2 modules — registered here by parent agent after each agent commit ───
-    // NOTE: AdminSeedService (src/bootstrap/admin-seed.ts) is intentionally NOT registered yet.
-    // It's a Wave 1 placeholder with correct interface signature. Wave 2.A (AuthModule)
-    // will register the real AdminSeedService via its providers list.
-    // AuthModule,           // 4.A → 2.A (JWT strategies + login endpoint)
-    // AuthModule,           // 4.A → 2.A (JWT strategies + login endpoint)
-    // OrganizationsModule,  // 2.C
-    // ProductsModule,       // 2.C
-    // StorageModule,        // 2.D (LocalDiskProvider for photos)
-    //
-    // ─── Wave 3 modules ───
-    // RolesModule,          // 4.B → 3.A (CRUD + permission assignment)
-    // IngestionModule,      // 4.E → 3.B (BullMQ + 3 strategies)
+    // Stage 3 — Domain Mongoose schemas (all 7 entities).
+    UsersModule,
+    RolesModule,
+    OrganizationsModule,
+    ProductsModule,
+    StorageModule,
+    IngestionModule,
+
+    // Stage 4.B — Admin Area.
+    AuthModule,
   ],
+  providers: [AdminSeedService],
 })
 export class AppModule {}

@@ -1,0 +1,243 @@
+<div class="admin-layout">
+  <!-- Sidebar / Header -->
+  <header class="admin-header">
+    <div class="header-brand">
+      <span class="brand-logo">KPPDF</span>
+      <span class="brand-label">Панель управления</span>
+    </div>
+    <nav class="header-nav">
+      <button
+        class="tab-btn"
+        [class.active]="activeTab() === 'roles'"
+        (click)="setTab('roles')"
+      >Роли и права</button>
+      <button
+        class="tab-btn"
+        [class.active]="activeTab() === 'users'"
+        (click)="setTab('users')"
+      >Пользователи</button>
+    </nav>
+    <div class="header-user">
+      <span class="user-name">{{ auth.user()?.username }}</span>
+      <span class="user-role">{{ auth.user()?.roleName }}</span>
+      <button class="btn-logout" (click)="logout()">Выйти</button>
+    </div>
+  </header>
+
+  <!-- Content -->
+  <main class="admin-content">
+    @if (loading()) {
+      <div class="loading-state">
+        <div class="spinner-lg"></div>
+        <p>Загрузка...</p>
+      </div>
+    } @else if (error()) {
+      <div class="alert alert-error">{{ error() }}</div>
+    } @else if (activeTab() === 'roles') {
+      <!-- ═══ ROLES TAB ═══ -->
+      <section class="section-header">
+        <h2>Роли и права доступа</h2>
+        @if (auth.hasPermission('ROLES_WRITE')) {
+          <button class="btn btn-sm btn-primary" (click)="openNewRole()">
+            ＋ Новая роль
+          </button>
+        }
+      </section>
+
+      <!-- Role Form -->
+      @if (showRoleForm()) {
+        <div class="card form-card">
+          <h3>{{ editingRole() ? 'Редактировать роль' : 'Новая роль' }}</h3>
+          <form [formGroup]="roleForm" (ngSubmit)="saveRole()" class="inline-form">
+            <div class="form-row">
+              <div class="field">
+                <label>Название роли</label>
+                <input formControlName="name" placeholder="operator" />
+              </div>
+              <div class="field">
+                <label>Описание</label>
+                <input formControlName="description" placeholder="Read-only access" />
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary btn-sm" [disabled]="roleForm.invalid">
+                {{ editingRole() ? 'Сохранить' : 'Создать' }}
+              </button>
+              <button type="button" class="btn btn-ghost btn-sm" (click)="showRoleForm.set(false)">
+                Отмена
+              </button>
+            </div>
+          </form>
+        </div>
+      }
+
+      <!-- RBAC Matrix -->
+      <div class="rbac-matrix">
+        <table>
+          <thead>
+            <tr>
+              <th class="th-role">Роль / Раздел</th>
+              @for (group of sectionGroups(); track group.section) {
+                <th [attr.colspan]="group.actions.length" class="th-section">
+                  {{ group.section }}
+                </th>
+              }
+              <th class="th-actions">Действия</th>
+            </tr>
+            <tr class="sub-header">
+              <th></th>
+              @for (group of sectionGroups(); track group.section) {
+                @for (action of group.actions; track action) {
+                  <th class="th-action">{{ action }}</th>
+                }
+              }
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (role of roles(); track role._id) {
+              <tr
+                class="role-row"
+                [class.row-archived]="role.status === 'ARCHIVED'"
+                [class.row-system]="role.isSystemRole"
+              >
+                <td class="td-role">
+                  <div class="role-info">
+                    <span class="role-name">{{ role.name }}</span>
+                    @if (role.isSystemRole) {
+                      <span class="badge badge-system">system</span>
+                    }
+                    @if (role.status === 'ARCHIVED') {
+                      <span class="badge badge-archived">archived</span>
+                    }
+                  </div>
+                </td>
+                @for (group of sectionGroups(); track group.section) {
+                  @for (action of group.actions; track action) {
+                    <td class="td-cell">
+                      @if (!role.isSystemRole) {
+                        <label class="checkbox-wrapper">
+                          <input
+                            type="checkbox"
+                            [checked]="hasPermission(role, group.section, action)"
+                            (change)="togglePermission(role, group.section, action)"
+                          />
+                          <span class="checkmark"></span>
+                        </label>
+                      } @else {
+                        <span class="check-static">
+                          {{ hasPermission(role, group.section, action) ? '✓' : '' }}
+                        </span>
+                      }
+                    </td>
+                  }
+                }
+                <td class="td-actions">
+                  @if (!role.isSystemRole && auth.hasPermission('ROLES_WRITE')) {
+                    <button class="btn-icon" title="Редактировать" (click)="editRole(role)">✎</button>
+                    <button class="btn-icon btn-icon-danger" title="Удалить" (click)="deleteRole(role)">✕</button>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    } @else {
+      <!-- ═══ USERS TAB ═══ -->
+      <section class="section-header">
+        <h2>Пользователи</h2>
+        @if (auth.hasPermission('USERS_WRITE')) {
+          <button class="btn btn-sm btn-primary" (click)="openNewUser()">
+            ＋ Новый пользователь
+          </button>
+        }
+      </section>
+
+      <!-- User Form -->
+      @if (showUserForm()) {
+        <div class="card form-card">
+          <h3>{{ editingUser() ? 'Редактировать пользователя' : 'Новый пользователь' }}</h3>
+          <form [formGroup]="userForm" (ngSubmit)="saveUser()" class="inline-form">
+            <div class="form-row">
+              <div class="field">
+                <label>Логин</label>
+                <input formControlName="username" placeholder="ivanov" [disabled]="!!editingUser()" />
+              </div>
+              <div class="field">
+                <label>{{ editingUser() ? 'Новый пароль (опционально)' : 'Пароль' }}</label>
+                <input type="password" formControlName="password" placeholder="••••••••" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="field">
+                <label>Полное имя</label>
+                <input formControlName="fullName" placeholder="Иванов Иван" />
+              </div>
+              <div class="field">
+                <label>Телефон</label>
+                <input formControlName="phone" placeholder="+7 (999) 123-45-67" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="field">
+                <label>Роль</label>
+                <select formControlName="roleId">
+                  <option value="">— Выберите роль —</option>
+                  @for (role of activeRoles(); track role._id) {
+                    <option [value]="role._id">{{ role.name }}</option>
+                  }
+                </select>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary btn-sm" [disabled]="userForm.invalid">
+                {{ editingUser() ? 'Сохранить' : 'Создать' }}
+              </button>
+              <button type="button" class="btn btn-ghost btn-sm" (click)="showUserForm.set(false)">
+                Отмена
+              </button>
+            </div>
+          </form>
+        </div>
+      }
+
+      <!-- Users Table -->
+      <div class="users-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Логин</th>
+              <th>Полное имя</th>
+              <th>Телефон</th>
+              <th>Роль</th>
+              <th>Последний вход</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (user of users(); track user._id) {
+              <tr>
+                <td class="td-mono">{{ user.username }}</td>
+                <td>{{ user.fullName }}</td>
+                <td>{{ user.phone || '—' }}</td>
+                <td>
+                  <span class="badge badge-role">{{ getRoleName(user.roleId) }}</span>
+                </td>
+                <td class="td-mono">{{ user.lastLoginAt ? (user.lastLoginAt | date: 'short') : '—' }}</td>
+                <td class="td-actions">
+                  @if (auth.hasPermission('USERS_WRITE')) {
+                    <button class="btn-icon" title="Редактировать" (click)="editUser(user)">✎</button>
+                  }
+                  @if (auth.hasPermission('USERS_DELETE')) {
+                    <button class="btn-icon btn-icon-danger" title="Удалить" (click)="deleteUser(user)">✕</button>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </main>
+</div>
