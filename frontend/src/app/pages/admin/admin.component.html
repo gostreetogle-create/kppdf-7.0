@@ -5,19 +5,72 @@
       <span class="brand-logo">KPPDF</span>
       <span class="brand-label">Панель управления</span>
     </div>
-    <nav class="header-nav">
-      <button
-        class="tab-btn"
-        [class.active]="activeTab() === 'roles'"
-        (click)="setTab('roles')"
-      >Роли и права</button>
-      <button
-        class="tab-btn"
-        [class.active]="activeTab() === 'users'"
-        (click)="setTab('users')"
-      >Пользователи</button>
+
+    <!-- Top nav: grouped dropdowns by category. Click trigger to expand,
+         click item to switch tab (which closes the dropdown). Active
+         category gets an underline indicator AND accent color on trigger. -->
+    <nav class="header-nav" aria-label="Разделы">
+      @for (group of NAV_GROUPS; track group.id) {
+        @if (hasAnyPermissionInGroup(group)) {
+          <div
+            class="nav-group"
+            [class.is-open]="openGroupId() === group.id"
+            [class.has-active]="isGroupActive(group)"
+          >
+            <button
+              type="button"
+              class="nav-group-trigger"
+              [attr.aria-expanded]="openGroupId() === group.id"
+              aria-haspopup="menu"
+              [attr.aria-controls]="'nav-dropdown-' + group.id"
+              (click)="toggleNavGroup(group.id)"
+            >
+              <span class="nav-group-label">{{ group.label }}</span>
+              <span class="nav-group-caret" aria-hidden="true">▾</span>
+            </button>
+            @if (openGroupId() === group.id) {
+              <div
+                class="nav-dropdown"
+                role="menu"
+                [id]="'nav-dropdown-' + group.id"
+              >
+                @for (item of group.items; track item.tab) {
+                  @if (auth.hasPermission(item.perm)) {
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="nav-item"
+                      [class.active]="activeTab() === item.tab"
+                      (click)="selectTabFromNav(item.tab)"
+                    >
+                      <span class="nav-item-label">{{ item.label }}</span>
+                      @if (activeTab() === item.tab) {
+                        <span class="nav-item-mark" aria-hidden="true">✓</span>
+                      }
+                    </button>
+                  }
+                }
+              </div>
+            }
+          </div>
+        }
+      }
     </nav>
+
     <div class="header-user">
+      <!-- Theme toggle: persisted to localStorage; binds data-theme
+           attribute on :host via [attr.data-theme]="theme()" in TS. -->
+      <button
+        type="button"
+        class="theme-toggle-btn"
+        [attr.aria-label]="
+          theme() === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'
+        "
+        [title]="theme() === 'dark' ? 'Светлая тема' : 'Тёмная тема'"
+        (click)="toggleTheme()"
+      >
+        @if (theme() === 'dark') { 🌙 } @else { ☀️ }
+      </button>
       <span class="user-name">{{ auth.user()?.username }}</span>
       <span class="user-role">{{ auth.user()?.roleName }}</span>
       <button class="btn-logout" (click)="logout()">Выйти</button>
@@ -31,10 +84,23 @@
         <div class="spinner-lg"></div>
         <p>Загрузка...</p>
       </div>
-    } @else if (error()) {
-      <div class="alert alert-error">{{ error() }}</div>
+    } @else if (!hasAnyReadPerm()) {
+      <div class="no-permissions">
+        У вас нет ни одного раздела с правами на чтение. Обратитесь к администратору для назначения роли.
+      </div>
     } @else if (activeTab() === 'roles') {
       <!-- ═══ ROLES TAB ═══ -->
+
+      <!-- Per-stream error chips. loadRoles + loadPermissions (matrix deps)
+           share one chip — first non-null wins. Single helper invocation via
+           `@if (...; as msg)` so we don't re-look up the map twice. -->
+      @if (getStreamError('loadRoles') ?? getStreamError('loadPermissions'); as msg) {
+        <div class="alert alert-error">{{ msg }}</div>
+      }
+      @if (getStreamError('updateRole'); as msg) {
+        <div class="alert alert-error alert-sm">{{ msg }}</div>
+      }
+
       <section class="section-header">
         <h2>Роли и права доступа</h2>
         @if (auth.hasPermission('ROLES_WRITE')) {
@@ -48,15 +114,20 @@
       @if (showRoleForm()) {
         <div class="card form-card">
           <h3>{{ editingRole() ? 'Редактировать роль' : 'Новая роль' }}</h3>
+          <!-- saveRole error appears right under the title, near the
+               submit button — closest possible to the action origin. -->
+          @if (getStreamError('saveRole'); as msg) {
+            <div class="alert alert-error">{{ msg }}</div>
+          }
           <form [formGroup]="roleForm" (ngSubmit)="saveRole()" class="inline-form">
             <div class="form-row">
               <div class="field">
                 <label>Название роли</label>
-                <input formControlName="name" placeholder="operator" />
+                <input formControlName="name" placeholder="оператор" />
               </div>
               <div class="field">
                 <label>Описание</label>
-                <input formControlName="description" placeholder="Read-only access" />
+                <input formControlName="description" placeholder="Только чтение" />
               </div>
             </div>
             <div class="form-actions">
@@ -69,6 +140,11 @@
             </div>
           </form>
         </div>
+      }
+
+      <!-- deleteRole error (from clicking ✕ on a row) -->
+      @if (getStreamError('deleteRole'); as msg) {
+        <div class="alert alert-error alert-sm">{{ msg }}</div>
       }
 
       <!-- RBAC Matrix -->
@@ -105,10 +181,10 @@
                   <div class="role-info">
                     <span class="role-name">{{ role.name }}</span>
                     @if (role.isSystemRole) {
-                      <span class="badge badge-system">system</span>
+                      <span class="badge badge-system">системная</span>
                     }
                     @if (role.status === 'ARCHIVED') {
-                      <span class="badge badge-archived">archived</span>
+                      <span class="badge badge-archived">в архиве</span>
                     }
                   </div>
                 </td>
@@ -143,8 +219,453 @@
           </tbody>
         </table>
       </div>
+    } @else if (activeTab() === 'products') {
+      <!-- ═══ PRODUCTS TAB ═══ (full CRUD incl. photo upload + COPY) ═══ -->
+
+      <!-- loadProducts error at top of tab -->
+      @if (getStreamError('loadProducts'); as msg) {
+        <div class="alert alert-error">{{ msg }}</div>
+      }
+
+      <section class="section-header">
+        <h2>Товары</h2>
+        @if (auth.hasPermission('PRODUCTS_WRITE')) {
+          <button class="btn btn-sm btn-primary" (click)="openNewProduct()">
+            ＋ Новый товар
+          </button>
+        }
+      </section>
+
+      <!-- Product Form -->
+      @if (showProductForm() && auth.hasPermission('PRODUCTS_WRITE')) {
+        <div class="card form-card">
+          <h3>{{ editingProduct() ? 'Редактировать товар' : 'Новый товар' }}</h3>
+          <!-- saveProduct error — top of the form, just under the title. -->
+          @if (getStreamError('saveProduct'); as msg) {
+            <div class="alert alert-error">{{ msg }}</div>
+          }
+          <form [formGroup]="productForm" (ngSubmit)="saveProduct()" class="inline-form">
+            <div class="form-row">
+              <div class="field">
+                <label>Название</label>
+                <input formControlName="name" placeholder="Кофе молотый 250г" />
+              </div>
+              <div class="field">
+                <label>SKU (A-Z, 0-9, дефис)</label>
+                <input formControlName="sku" placeholder="COFFEE-250" class="input-mono" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="field">
+                <label>Цена</label>
+                <input formControlName="price" type="number" min="0" step="0.01" />
+              </div>
+              <div class="field">
+                <label>Себестоимость</label>
+                <input formControlName="cost" type="number" min="0" step="0.01" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="field">
+                <label>Категория</label>
+                <input formControlName="category" placeholder="Напитки" />
+              </div>
+              <div class="field">
+                <label>Единица измерения</label>
+                <input formControlName="unit" placeholder="шт" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="field field-wide">
+                <label>Описание</label>
+                <textarea
+                  formControlName="description"
+                  rows="2"
+                  placeholder="Арабика, средняя обжарка, вакуумная упаковка..."
+                ></textarea>
+              </div>
+            </div>
+
+            <!-- Photo uploader (MVP: 1 фото на товар, BR-PRD-4) -->
+            <div class="form-row">
+              <div class="field field-wide">
+                <label>Фото</label>
+                <div class="photo-uploader">
+                  @if (productPhotoPreviewUrl()) {
+                    <img [src]="productPhotoPreviewUrl()" alt="Превью" class="photo-preview" />
+                  } @else if (productPhotoLinkedId() && !productPhotoUploading()) {
+                    <div class="photo-existing">
+                      <span class="photo-tick">✓</span>
+                      Фото привязано (обновите, чтобы заменить)
+                    </div>
+                  } @else if (productPhotoUploading()) {
+                    <div class="photo-spinner"><div class="spinner-sm"></div> Загрузка...</div>
+                  } @else {
+                    <div class="photo-empty">Фото не выбрано</div>
+                  }
+                  <div class="photo-controls">
+                    <label class="btn btn-ghost btn-sm">
+                      {{ productPhotoLinkedId() ? 'Заменить фото' : 'Загрузить фото' }}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        (change)="onProductPhotoSelected($event)"
+                        hidden
+                      />
+                    </label>
+                    @if (productPhotoLinkedId()) {
+                      <button type="button" class="btn-icon btn-icon-danger" title="Удалить фото" (click)="removeProductPhoto()">✕</button>
+                    }
+                  </div>
+                  @if (productPhotoError(); as msg) {
+                    <div class="alert alert-error alert-sm">{{ msg }}</div>
+                  }
+                </div>
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary btn-sm" [disabled]="productForm.invalid || !productPhotoLinkedId()">
+                {{ editingProduct() ? 'Сохранить' : 'Создать' }}
+              </button>
+              <button type="button" class="btn btn-ghost btn-sm" (click)="cancelProductForm()">
+                Отмена
+              </button>
+            </div>
+          </form>
+        </div>
+      }
+
+      <!-- copyProduct + deleteProduct errors — above the table, near the
+           action origin (✎, ⎘, ✕ buttons on each row). -->
+      @if (getStreamError('copyProduct'); as msg) {
+        <div class="alert alert-error alert-sm">{{ msg }}</div>
+      }
+      @if (getStreamError('deleteProduct'); as msg) {
+        <div class="alert alert-error alert-sm">{{ msg }}</div>
+      }
+
+      <!-- Products Table -->
+      <div class="users-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Название</th>
+              <th>SKU</th>
+              <th>Цена</th>
+              <th>Себест.</th>
+              <th>Фото</th>
+              <th>Создан</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (product of products(); track product._id) {
+              <tr [class.row-deleted]="product.deletedAt">
+                <td>{{ product.name }}</td>
+                <td class="td-mono">{{ product.sku }}</td>
+                <td class="td-mono">{{ product.price }}</td>
+                <td class="td-mono">{{ product.cost }}</td>
+                <td class="td-mono">{{ product.photoIds?.length ?? 0 }}</td>
+                <td class="td-mono">{{ product.createdAt ? (product.createdAt | date: 'short') : '—' }}</td>
+                <td class="td-actions">
+                  @if (auth.hasPermission('PRODUCTS_WRITE')) {
+                    <button class="btn-icon" title="Редактировать" (click)="editProduct(product)">✎</button>
+                    <button class="btn-icon btn-icon-copy" title="Копировать" (click)="copyProduct(product)">⎘</button>
+                  }
+                  @if (auth.hasPermission('PRODUCTS_DELETE')) {
+                    <button class="btn-icon btn-icon-danger" title="Удалить" (click)="deleteProduct(product)">✕</button>
+                  }
+                </td>
+              </tr>
+            }
+            @if (products().length === 0) {
+              <tr><td colspan="7" class="empty-row">Нет товаров</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    } @else if (activeTab() === 'organizations') {
+      <!-- ═══ ORGANIZATIONS TAB ═══ (full CRUD incl. OOO/IP/FL + contacts) ═══ -->
+
+      <!-- loadOrganizations error at top of tab -->
+      @if (getStreamError('loadOrganizations'); as msg) {
+        <div class="alert alert-error">{{ msg }}</div>
+      }
+
+      <section class="section-header">
+        <h2>Организации</h2>
+        @if (auth.hasPermission('ORGANIZATIONS_WRITE')) {
+          <button class="btn btn-sm btn-primary" (click)="openNewOrg()">
+            ＋ Новая организация
+          </button>
+        }
+      </section>
+
+      <!-- Org Form -->
+      @if (showOrgForm() && auth.hasPermission('ORGANIZATIONS_WRITE')) {
+        <div class="card form-card form-card-wide">
+          <h3>{{ editingOrg() ? 'Редактировать организацию' : 'Новая организация' }}</h3>
+          <!-- saveOrg error — top of the form, just under the title. -->
+          @if (getStreamError('saveOrg'); as msg) {
+            <div class="alert alert-error">{{ msg }}</div>
+          }
+          <form [formGroup]="orgForm" (ngSubmit)="saveOrg()" class="inline-form">
+            <div class="form-row">
+              <div class="field">
+                <label>Название организации</label>
+                <input formControlName="name" placeholder='"ООО Ромашка" или "ИП Иванов"' />
+              </div>
+              <div class="field">
+                <label>Тип (legalType)</label>
+                <select formControlName="legalType">
+                  @for (t of LEGAL_TYPES; track t) {
+                    <option [value]="t">{{ translateLegalType(t) }}</option>
+                  }
+                </select>
+              </div>
+            </div>
+
+            <!-- OOO conditional -->
+            @if (orgForm.controls.legalType.value === 'OOO') {
+              <fieldset class="legal-block">
+                <legend>Реквизиты ООО</legend>
+                <div class="form-row">
+                  <div class="field">
+                    <label>ИНН</label>
+                    <input formControlName="inn" class="input-mono" placeholder="7701234567" />
+                  </div>
+                  <div class="field">
+                    <label>КПП</label>
+                    <input formControlName="kpp" class="input-mono" placeholder="770101001" />
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="field">
+                    <label>ОГРН</label>
+                    <input formControlName="ogrn" class="input-mono" placeholder="1027701234567" />
+                  </div>
+                  <div class="field">
+                    <label>Дата регистрации</label>
+                    <input formControlName="registrationDate" type="date" />
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="field field-wide">
+                    <label>Генеральный директор</label>
+                    <input formControlName="directorName" placeholder="Иванов Иван Иванович" />
+                  </div>
+                </div>
+              </fieldset>
+            }
+
+            <!-- IP conditional -->
+            @if (orgForm.controls.legalType.value === 'IP') {
+              <fieldset class="legal-block">
+                <legend>Реквизиты ИП</legend>
+                <div class="form-row">
+                  <div class="field">
+                    <label>ИНН</label>
+                    <input formControlName="inn" class="input-mono" placeholder="123456789012" />
+                  </div>
+                  <div class="field">
+                    <label>ОГРНИП</label>
+                    <input formControlName="ogrnip" class="input-mono" placeholder="315774600012345" />
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="field">
+                    <label>Дата регистрации ИП</label>
+                    <input formControlName="ipRegistrationDate" type="date" />
+                  </div>
+                </div>
+              </fieldset>
+            }
+
+            <!-- FL conditional -->
+            @if (orgForm.controls.legalType.value === 'FL') {
+              <fieldset class="legal-block">
+                <legend>Паспортные данные физ. лица</legend>
+                <div class="form-row">
+                  <div class="field">
+                    <label>Серия</label>
+                    <input formControlName="passportSeries" class="input-mono" placeholder="4501" />
+                  </div>
+                  <div class="field">
+                    <label>Номер</label>
+                    <input formControlName="passportNumber" class="input-mono" placeholder="123456" />
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="field field-wide">
+                    <label>Кем выдан</label>
+                    <input formControlName="passportIssuedBy" placeholder="ОУФМС по г. Москве" />
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="field">
+                    <label>Дата выдачи</label>
+                    <input formControlName="passportIssuedDate" type="date" />
+                  </div>
+                </div>
+              </fieldset>
+            }
+
+            <!-- Common contact info -->
+            <fieldset class="legal-block">
+              <legend>Контактные данные</legend>
+              <div class="form-row">
+                <div class="field">
+                  <label>Телефон</label>
+                  <input formControlName="phone" placeholder="+7 (495) 123-45-67" />
+                </div>
+                <div class="field">
+                  <label>Email</label>
+                  <input formControlName="email" type="email" placeholder="info@romashka.ru" />
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="field">
+                  <label>Сайт</label>
+                  <input formControlName="website" placeholder="https://romashka.ru" />
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="field">
+                  <label>Юр. адрес</label>
+                  <input formControlName="legalAddress" placeholder="г. Москва, ул. ..." />
+                </div>
+                <div class="field">
+                  <label>Факт. адрес</label>
+                  <input formControlName="actualAddress" placeholder="г. Москва, ул. ..." />
+                </div>
+              </div>
+            </fieldset>
+
+            <!-- Party types (≥1 — BR-ORG-4) -->
+            <fieldset class="legal-block">
+              <legend>Роли контрагента (partyTypes)</legend>
+              <div class="party-checkboxes">
+                @for (t of PARTY_TYPES; track t) {
+                  <label class="checkbox-row">
+                    <input
+                      type="checkbox"
+                      [checked]="hasPartyType(t)"
+                      (change)="togglePartyType(t, $any($event.target).checked)"
+                    />
+                    <span class="checkmark-inline"></span>
+                    <span class="checkbox-label">{{ translatePartyType(t) }}</span>
+                  </label>
+                }
+              </div>
+            </fieldset>
+
+            <!-- Contacts FormArray -->
+            <fieldset class="legal-block">
+              <legend>Контакты ({{ orgContacts.length }})</legend>
+
+              <div formArrayName="contacts" class="contacts-array">
+                @for (contact of orgContacts.controls; track $index; let i = $index) {
+                  <div [formGroupName]="i" class="contact-row">
+                    <div class="form-row">
+                      <div class="field">
+                        <label>ФИО</label>
+                        <input formControlName="name" placeholder="Сидоров Сидор" />
+                      </div>
+                      <div class="field">
+                        <label>Должность</label>
+                        <input formControlName="position" placeholder="Менеджер" />
+                      </div>
+                    </div>
+                    <div class="form-row">
+                      <div class="field">
+                        <label>Телефон</label>
+                        <input formControlName="phone" />
+                      </div>
+                      <div class="field">
+                        <label>Email</label>
+                        <input formControlName="email" type="email" />
+                      </div>
+                      <button
+                        type="button"
+                        class="btn-icon btn-icon-danger btn-icon-contact-remove"
+                        title="Удалить контакт"
+                        (click)="removeOrgContact(i)"
+                      >✕</button>
+                    </div>
+                  </div>
+                }
+              </div>
+
+              <button type="button" class="btn btn-ghost btn-sm" (click)="addOrgContact()">
+                ＋ Добавить контакт
+              </button>
+            </fieldset>
+
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary btn-sm" [disabled]="orgForm.invalid">
+                {{ editingOrg() ? 'Сохранить' : 'Создать' }}
+              </button>
+              <button type="button" class="btn btn-ghost btn-sm" (click)="showOrgForm.set(false)">
+                Отмена
+              </button>
+            </div>
+          </form>
+        </div>
+      }
+
+      <!-- deleteOrganization error — above the table. -->
+      @if (getStreamError('deleteOrganization'); as msg) {
+        <div class="alert alert-error alert-sm">{{ msg }}</div>
+      }
+
+      <!-- Organizations Table -->
+      <div class="users-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Название</th>
+              <th>Тип</th>
+              <th>ИНН</th>
+              <th>Роли</th>
+              <th>Контакты</th>
+              <th>Создана</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (org of organizations(); track org._id) {
+              <tr [class.row-deleted]="org.deletedAt">
+                <td>{{ org.name }}</td>
+                <td><span class="badge badge-role">{{ translateLegalType(org.legalType) }}</span></td>
+                <td class="td-mono">{{ org.inn || '—' }}</td>
+                <td>{{ translatePartyTypes(org.partyTypes) }}</td>
+                <td class="td-mono">{{ org.contacts?.length ?? 0 }}</td>
+                <td class="td-mono">{{ org.createdAt ? (org.createdAt | date: 'short') : '—' }}</td>
+                <td class="td-actions">
+                  @if (auth.hasPermission('ORGANIZATIONS_WRITE')) {
+                    <button class="btn-icon" title="Редактировать" (click)="editOrg(org)">✎</button>
+                  }
+                  @if (auth.hasPermission('ORGANIZATIONS_DELETE')) {
+                    <button class="btn-icon btn-icon-danger" title="Удалить" (click)="deleteOrganization(org)">✕</button>
+                  }
+                </td>
+              </tr>
+            }
+            @if (organizations().length === 0) {
+              <tr><td colspan="7" class="empty-row">Нет организаций</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
     } @else {
       <!-- ═══ USERS TAB ═══ -->
+
+      <!-- loadUsers error at top of tab -->
+      @if (getStreamError('loadUsers'); as msg) {
+        <div class="alert alert-error">{{ msg }}</div>
+      }
+
       <section class="section-header">
         <h2>Пользователи</h2>
         @if (auth.hasPermission('USERS_WRITE')) {
@@ -158,11 +679,15 @@
       @if (showUserForm()) {
         <div class="card form-card">
           <h3>{{ editingUser() ? 'Редактировать пользователя' : 'Новый пользователь' }}</h3>
+          <!-- saveUser error — top of the form. -->
+          @if (getStreamError('saveUser'); as msg) {
+            <div class="alert alert-error">{{ msg }}</div>
+          }
           <form [formGroup]="userForm" (ngSubmit)="saveUser()" class="inline-form">
             <div class="form-row">
               <div class="field">
                 <label>Логин</label>
-                <input formControlName="username" placeholder="ivanov" [disabled]="!!editingUser()" />
+                <input formControlName="username" placeholder="иванов" />
               </div>
               <div class="field">
                 <label>{{ editingUser() ? 'Новый пароль (опционально)' : 'Пароль' }}</label>
@@ -200,6 +725,11 @@
             </div>
           </form>
         </div>
+      }
+
+      <!-- deleteUser error — above the table. -->
+      @if (getStreamError('deleteUser'); as msg) {
+        <div class="alert alert-error alert-sm">{{ msg }}</div>
       }
 
       <!-- Users Table -->
