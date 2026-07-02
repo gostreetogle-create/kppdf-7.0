@@ -133,31 +133,38 @@ function StartBackend {
   }
   Info "Starting backend in background..."
   $logFile = Join-Path $RunDir 'backend.log'
-  $proc = Start-Process -FilePath 'cmd.exe' `
-    -ArgumentList '/c','cd','/d',$BackendDir,'&&','npm','run','start:dev','2>&1' `
-    -RedirectStandardOutput $logFile `
-    -WindowStyle Hidden -PassThru
-  $proc.Id | Out-File -FilePath $pidfile -Encoding utf8
-  Start-Sleep -Seconds 6
-  Ok "Backend starting (PID $proc.Id, log → $logFile)"
+  $wmiCmd = "cmd.exe /c cd /d $BackendDir && npm run start:dev > `"$logFile`" 2>&1"
+  $wmiResult = ([wmiclass]"win32_process").Create($wmiCmd)
+  if ($wmiResult.ReturnValue -ne 0) {
+    Err "Failed to start backend (WMI error $($wmiResult.ReturnValue))"
+    exit 1
+  }
+  $procId = $wmiResult.ProcessId
+  $procId | Out-File -FilePath $pidfile -Encoding utf8
+  Start-Sleep -Seconds 8
+  Ok "Backend starting (PID $procId, log → $logFile)"
 }
 
 # ─── Phase 7: Start frontend ─────────────────────────────────
 function StartFrontend {
   Step 'Phase 7/8 — Start Angular frontend (dev mode)'
+  if (-not (Test-Path $RunDir)) { New-Item -ItemType Directory -Path $RunDir | Out-Null }
   $pidfile = Join-Path $RunDir 'frontend.pid'
   if ((Test-Path $pidfile) -and (Get-Process -Id (Get-Content $pidfile) -ErrorAction SilentlyContinue)) {
     Ok "Frontend already running (PID $(Get-Content $pidfile))"; return
   }
   Info "Starting frontend in background..."
   $logFile = Join-Path $RunDir 'frontend.log'
-  $proc = Start-Process -FilePath 'cmd.exe' `
-    -ArgumentList '/c','cd','/d',$FrontendDir,'&&','npm','start','2>&1' `
-    -RedirectStandardOutput $logFile `
-    -WindowStyle Hidden -PassThru
-  $proc.Id | Out-File -FilePath $pidfile -Encoding utf8
-  Start-Sleep -Seconds 6
-  Ok "Frontend starting (PID $proc.Id, log → $logFile)"
+  $wmiCmd = "cmd.exe /c cd /d $FrontendDir && npm start > `"$logFile`" 2>&1"
+  $wmiResult = ([wmiclass]"win32_process").Create($wmiCmd)
+  if ($wmiResult.ReturnValue -ne 0) {
+    Err "Failed to start frontend (WMI error $($wmiResult.ReturnValue))"
+    exit 1
+  }
+  $procId = $wmiResult.ProcessId
+  $procId | Out-File -FilePath $pidfile -Encoding utf8
+  Start-Sleep -Seconds 8
+  Ok "Frontend starting (PID $procId, log → $logFile)"
 }
 
 # ─── Phase 8: Verify & report ────────────────────────────────

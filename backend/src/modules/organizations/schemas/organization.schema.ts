@@ -117,5 +117,6 @@ export class Organization extends Document {
 
 export const OrganizationSchema = SchemaFactory.createForClass(Organization);
 
-OrganizationSchema.index({ name: 1 });
+// Unique index on name — closes race condition on concurrent OrganizationService.create()
+OrganizationSchema.index({ name: 1 }, { unique: true });
 OrganizationSchema.index({ inn: 1 });

@@ -53,7 +53,18 @@ export class OrganizationsService {
       ...dto,
       contacts: dto.contacts ?? [],
     });
-    return org.save();
+
+    try {
+      return await org.save();
+    } catch (err: any) {
+      // Unique index violation (race condition) → 409
+      if (err?.code === 11000) {
+        throw new ConflictException(
+          'Organization with this name already exists',
+        );
+      }
+      throw err;
+    }
   }
 
   async update(
