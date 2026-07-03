@@ -38,11 +38,18 @@ export const ADMIN_TABS = [
     perm: 'ORGANIZATIONS_READ',
     navGroup: 'catalog',
   },
+  {
+    tab: 'import',
+    label: 'Импорт',
+    perm: 'IMPORTS_READ',
+    navGroup: 'tools',
+  },
 ] as const;
 
 export type AdminTabName = (typeof ADMIN_TABS)[number]['tab'];
 export type AdminPermKey = (typeof ADMIN_TABS)[number]['perm'];
-export type AdminNavGroupId = 'system' | 'catalog';
+export type AdminNavGroupId = 'system' | 'catalog' | 'tools';
+
 /**
  * Shape of a single dropdown nav group (`NAV_GROUPS[i]`). Consumers
  * (admin.component.ts helpers + template) parameterize helpers like
@@ -76,5 +83,10 @@ export const NAV_GROUPS: readonly {
     id: 'catalog',
     label: 'Каталог',
     items: ADMIN_TABS.filter((t) => t.navGroup === 'catalog'),
+  },
+  {
+    id: 'tools',
+    label: 'Инструменты',
+    items: ADMIN_TABS.filter((t) => t.navGroup === 'tools'),
   },
 ];

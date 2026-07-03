@@ -1,6 +1,8 @@
 import { Component, OnInit, inject, signal, computed, DestroyRef, HostListener } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe } from '@angular/common';
+import { interval, Subscription } from 'rxjs';
+import { switchMap } from 'rxjs/operators';
 import {
   ReactiveFormsModule,
   FormBuilder,
@@ -21,6 +23,8 @@ import {
   type LegalType,
   type PartyType,
   type OrganizationContact,
+  type ImportJob,
+  type ImportEntityType,
 } from '../../services/api.service';
 import { ADMIN_TABS, NAV_GROUPS, type AdminNavGroup, type AdminNavGroupId, type AdminTabName } from './admin-tabs';
 
@@ -122,6 +126,7 @@ export class AdminComponent implements OnInit {
   readonly users = signal<User[]>([]);
   readonly products = signal<Product[]>([]);
   readonly organizations = signal<Organization[]>([]);
+  readonly importJobs = signal<ImportJob[]>([]);
   /**
    * Per-stream error map. Each key is a stream name; the value is a
    * human-readable error message (or `null` if the slot is empty). Keys:
@@ -285,6 +290,37 @@ export class AdminComponent implements OnInit {
    */
   readonly pendingProductPhotoIds = signal<Set<string>>(new Set());
 
+  // ━━ Import ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  readonly importFile = signal<File | null>(null);
+  readonly importJsonText = signal('');
+  readonly importMethod = signal<'excel' | 'json'>('excel');
+  readonly importUploading = signal(false);
+  readonly importError = signal<string | null>(null);
+  readonly importSuccess = signal<string | null>(null);
+  readonly importEntityType = signal<ImportEntityType>('PRODUCTS');
+  private importPollSub: Subscription | null = null;
+
+  /** Which active job is being polled (null = no active polling). */
+  readonly importPollingActive = signal(false);
+
+  readonly IMPORT_SOURCE_LABELS: Record<string, string> = {
+    EXCEL: 'Excel',
+    JSON: 'JSON',
+    API: 'API',
+  };
+  readonly IMPORT_STATUS_LABELS: Record<string, string> = {
+    PENDING: 'В очереди',
+    PROCESSING: 'Обрабатывается',
+    COMPLETED: 'Завершён',
+    FAILED: 'Ошибка',
+    CANCELLED: 'Отменён',
+  };
+  readonly IMPORT_ENTITY_LABELS: Record<string, string> = {
+    PRODUCTS: 'Товары',
+    ORGANIZATIONS: 'Организации',
+    USERS: 'Пользователи',
+  };
+
   // ━━ Organization editing ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   readonly editingOrg = signal<Organization | null>(null);
   readonly showOrgForm = signal(false);
@@ -370,6 +406,13 @@ export class AdminComponent implements OnInit {
         onUsersLoaded: (u) => this.users.set(u),
         onProductsLoaded: (p) => this.products.set(p),
         onOrganizationsLoaded: (o) => this.organizations.set(o),
+        onImportJobsLoaded: (r) => {
+          this.importJobs.set(r.jobs);
+          const hasActive = r.jobs.some(
+            (j) => j.status === 'PENDING' || j.status === 'PROCESSING',
+          );
+          if (hasActive) this.startImportPolling();
+        },
         onStreamError: (k, m) => this.setStreamError(k, m),
       },
     });
@@ -670,7 +713,11 @@ export class AdminComponent implements OnInit {
     this.productPhotoError.set(null);
     this.api.uploadPhoto('products', file).subscribe({
       next: (res) => {
-        const newId = res.linkedPhotoId;
+        // Backend returns { original, medium, thumbnail }. Use original's _id
+        // as the linkedPhotoId and build the cluster array locally.
+        const newId = res.original._id;
+        const cluster = [res.original, res.medium, res.thumbnail];
+
         // If user is REPLACING a previously-uploaded pending photo,
         // cascade-delete the orphan on the server side. If replacing the
         // existing product's photo, keep it (owned by product).
@@ -691,7 +738,7 @@ export class AdminComponent implements OnInit {
           return next;
         });
         this.productPhotoLinkedId.set(newId);
-        const thumb = res.cluster.find((p) => p.variant === 'THUMBNAIL');
+        const thumb = cluster.find((p) => p.variant === 'THUMBNAIL');
         if (thumb) this.productPhotoPreviewUrl.set(thumb.storageUrl);
         this.productPhotoUploading.set(false);
       },
@@ -811,6 +858,205 @@ export class AdminComponent implements OnInit {
           this.extractErrorMessage(err, 'Ошибка удаления товара'),
         ),
     });
+  }
+
+  // ─── Import helpers ─────────────────────────────
+
+  translateImportStatus(s: string): string {
+    return this.IMPORT_STATUS_LABELS[s] ?? s;
+  }
+  translateImportSource(s: string): string {
+    return this.IMPORT_SOURCE_LABELS[s] ?? s;
+  }
+  translateImportEntity(t: ImportEntityType): string {
+    return this.IMPORT_ENTITY_LABELS[t] ?? t;
+  }
+
+  /** Handle file selected via either drag-drop or <input type="file">. */
+  onImportFileSelected(file: File | null): void {
+    this.importFile.set(file);
+    this.importError.set(null);
+    this.importSuccess.set(null);
+  }
+
+  /** Drag-over handler — highlight the drop zone. */
+  onImportDragOver(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const target = event.currentTarget as HTMLElement;
+    target.classList.add('drag-over');
+  }
+
+  onImportDragEnter(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const target = event.currentTarget as HTMLElement;
+    target.classList.add('drag-over');
+  }
+
+  onImportDragLeave(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const target = event.currentTarget as HTMLElement;
+    // Only remove if truly leaving the zone (not entering a child)
+    const related = event.relatedTarget as Node | null;
+    if (related && target.contains(related)) return;
+    target.classList.remove('drag-over');
+  }
+
+  onImportDrop(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const target = event.currentTarget as HTMLElement;
+    target.classList.remove('drag-over');
+    const file = event.dataTransfer?.files?.[0] ?? null;
+    if (file) this.onImportFileSelected(file);
+  }
+
+  /** Submit JSON data to the backend. */
+  startJsonImport(): void {
+    const raw = this.importJsonText().trim();
+    if (!raw) return;
+    let data: Record<string, any>[];
+    try {
+      data = JSON.parse(raw);
+      if (!Array.isArray(data)) {
+        this.importError.set('JSON должен быть массивом объектов');
+        return;
+      }
+      if (data.length === 0) {
+        this.importError.set('Массив не может быть пустым');
+        return;
+      }
+    } catch {
+      this.importError.set('Некорректный JSON — проверьте синтаксис');
+      return;
+    }
+
+    this.importUploading.set(true);
+    this.importError.set(null);
+    this.importSuccess.set(null);
+
+    this.api.importJson(this.importEntityType(), data).subscribe({
+      next: (res) => {
+        this.importUploading.set(false);
+        this.importJsonText.set('');
+        this.importSuccess.set(
+          `JSON импорт создан (записей: ${res.recordsCount ?? data.length})`,
+        );
+        this.refreshImportJobs();
+        this.startImportPolling();
+      },
+      error: (err) => {
+        this.importUploading.set(false);
+        this.importError.set(
+          this.extractErrorMessage(err, 'Ошибка создания JSON импорта'),
+        );
+      },
+    });
+  }
+
+  /** Upload the selected file to the backend. */
+  startExcelImport(): void {
+    const file = this.importFile();
+    if (!file) return;
+    this.importUploading.set(true);
+    this.importError.set(null);
+    this.importSuccess.set(null);
+
+    this.api.importExcel(this.importEntityType(), file).subscribe({
+      next: (res) => {
+        this.importUploading.set(false);
+        this.importFile.set(null);
+        this.importSuccess.set(`Задача импорта создана (ID: ${res.jobId})`);
+        this.refreshImportJobs();
+        this.startImportPolling();
+      },
+      error: (err) => {
+        this.importUploading.set(false);
+        this.importError.set(
+          this.extractErrorMessage(err, 'Ошибка создания задачи импорта'),
+        );
+      },
+    });
+  }
+
+  /** Refresh the import jobs list. */
+  refreshImportJobs(): void {
+    this.api.getImportJobs({ limit: 50 }).subscribe({
+      next: (res) => {
+        this.importJobs.set(res.jobs);
+        this.setStreamError('loadImportJobs', null);
+      },
+      error: (err) => {
+        this.setStreamError(
+          'loadImportJobs',
+          this.extractErrorMessage(err, 'Ошибка загрузки задач импорта'),
+        );
+      },
+    });
+  }
+
+  /**
+   * Start polling for active (PENDING / PROCESSING) jobs every 5 seconds.
+   * Stops when none left or component destroys.
+   */
+  startImportPolling(): void {
+    this.stopImportPolling();
+    this.importPollingActive.set(true);
+    this.importPollSub = interval(5000)
+      .pipe(
+        switchMap(() => this.api.getImportJobs({ limit: 50 })),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe({
+        next: (res) => {
+          this.importJobs.set(res.jobs);
+          const hasActive = res.jobs.some(
+            (j) => j.status === 'PENDING' || j.status === 'PROCESSING',
+          );
+          if (!hasActive) {
+            this.stopImportPolling();
+          }
+        },
+        error: () => {
+          // Silently retry next interval
+        },
+      });
+  }
+
+  stopImportPolling(): void {
+    this.importPollSub?.unsubscribe();
+    this.importPollSub = null;
+    this.importPollingActive.set(false);
+  }
+
+  cancelImportJob(job: ImportJob): void {
+    if (!confirm(`Отменить импорт "${this.translateImportSource(job.sourceType)}"?`)) return;
+    this.api.cancelImportJob(job._id).subscribe({
+      next: () => {
+        this.refreshImportJobs();
+        this.stopImportPolling();
+      },
+      error: (err) => {
+        this.setStreamError(
+          'cancelImport',
+          this.extractErrorMessage(err, 'Ошибка отмены импорта'),
+        );
+      },
+    });
+  }
+
+  /** Format job duration or return '—' */
+  formatImportDuration(job: ImportJob): string {
+    if (!job.createdAt) return '—';
+    const start = new Date(job.createdAt).getTime();
+    const end = job.completedAt
+      ? new Date(job.completedAt).getTime()
+      : Date.now();
+    const delta = Math.round((end - start) / 1000);
+    if (delta < 60) return `${delta} сек`;
+    return `${Math.floor(delta / 60)} мин ${delta % 60} сек`;
   }
 
   // ─── Organization CRUD (OOO/IP/FL conditional) ──────
