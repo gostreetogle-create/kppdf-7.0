@@ -7,11 +7,13 @@ import { Organization } from './schemas/organization.schema';
 
 /** Create a mock Mongoose model: callable constructor + static Query-like methods. */
 function mockModel(defaultData?: Record<string, any>) {
-  const model: any = vi.fn().mockImplementation((data?: Record<string, any>) => ({
-    ...(defaultData ?? {}),
-    ...(data ?? {}),
-    save: vi.fn().mockResolvedValue({ ...(defaultData ?? {}), ...(data ?? {}) }),
-  }));
+  const model: any = vi.fn().mockImplementation(function (data?: Record<string, any>) {
+    return {
+      ...(defaultData ?? {}),
+      ...(data ?? {}),
+      save: vi.fn().mockResolvedValue({ ...(defaultData ?? {}), ...(data ?? {}) }),
+    };
+  });
   model.find    = vi.fn().mockReturnValue({ exec: vi.fn().mockResolvedValue([]) });
   model.findOne  = vi.fn().mockReturnValue({ exec: vi.fn().mockResolvedValue(null) });
   model.findById = vi.fn().mockReturnValue({ exec: vi.fn().mockResolvedValue(null) });
@@ -65,7 +67,7 @@ describe('OrganizationsService', () => {
       mockOrgModel.findOne = vi.fn().mockReturnValue({ exec: vi.fn().mockResolvedValue(null) });
       const dto = { name: 'New Org', legalType: 'IP', partyTypes: ['SUPPLIER'], inn: '123456789012' };
       const saved = { _id: 'new-org', ...dto, contacts: [], deletedAt: null };
-      mockOrgModel.mockImplementation(() => ({ ...saved, save: vi.fn().mockResolvedValue(saved) }));
+      mockOrgModel.mockImplementation(function () { return { ...saved, save: vi.fn().mockResolvedValue(saved) }; });
       expect(await service.create(dto as any)).toHaveProperty('_id', 'new-org');
     });
     it('should reject duplicate name with 409', async () => {

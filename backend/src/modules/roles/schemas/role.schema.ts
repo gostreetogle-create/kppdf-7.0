@@ -35,5 +35,4 @@ export class Role extends Document {
 
 export const RoleSchema = SchemaFactory.createForClass(Role);
 
-RoleSchema.index({ name: 1 }, { unique: true });
 RoleSchema.index({ status: 1 });

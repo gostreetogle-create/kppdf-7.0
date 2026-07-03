@@ -7,11 +7,13 @@ import { Product } from './schemas/product.schema';
 
 /** Create a mock Mongoose model: callable constructor + static Query-like methods. */
 function mockModel(defaultData?: Record<string, any>) {
-  const model: any = vi.fn().mockImplementation((data?: Record<string, any>) => ({
-    ...(defaultData ?? {}),
-    ...(data ?? {}),
-    save: vi.fn().mockResolvedValue({ ...(defaultData ?? {}), ...(data ?? {}) }),
-  }));
+  const model: any = vi.fn().mockImplementation(function (data?: Record<string, any>) {
+    return {
+      ...(defaultData ?? {}),
+      ...(data ?? {}),
+      save: vi.fn().mockResolvedValue({ ...(defaultData ?? {}), ...(data ?? {}) }),
+    };
+  });
   model.find    = vi.fn().mockReturnValue({ exec: vi.fn().mockResolvedValue([]) });
   model.findOne  = vi.fn().mockReturnValue({ exec: vi.fn().mockResolvedValue(null) });
   model.findById = vi.fn().mockReturnValue({ exec: vi.fn().mockResolvedValue(null) });
@@ -68,13 +70,13 @@ describe('ProductsService', () => {
     it('should create a new product', async () => {
       const dto = { name: 'New Product', sku: 'NEW-001', price: 50, cost: 30, photoIds: [validObjectId] };
       const saved = { _id: 'new-prod', ...dto, photoIds: [validObjectId], deletedAt: null };
-      mockProductModel.mockImplementation(() => ({ ...saved, save: vi.fn().mockResolvedValue(saved) }));
+      mockProductModel.mockImplementation(function () { return { ...saved, save: vi.fn().mockResolvedValue(saved) }; });
       expect(await service.create(dto as any)).toHaveProperty('_id', 'new-prod');
     });
     it('should throw 409 on duplicate (name, sku) — BR-PRD-1', async () => {
       const mongoError: any = new Error('Duplicate key');
       mongoError.code = 11000;
-      mockProductModel.mockImplementation(() => ({ save: vi.fn().mockRejectedValue(mongoError) }));
+      mockProductModel.mockImplementation(function () { return { save: vi.fn().mockRejectedValue(mongoError) }; });
       await expect(
         service.create({ name: 'Existing', sku: 'EXIST-001', price: 10, cost: 5, photoIds: [validObjectId] } as any),
       ).rejects.toThrow(ConflictException);
@@ -101,7 +103,7 @@ describe('ProductsService', () => {
     it('should create a copy with auto-generated sku (BR-PRD-6)', async () => {
       const expectedSku = 'TEST-001-COPY-XXXX';
       const saved = { name: 'Test Product (копия)', sku: expectedSku };
-      mockProductModel.mockImplementation(() => ({ ...saved, save: vi.fn().mockResolvedValue(saved) }));
+      mockProductModel.mockImplementation(function () { return { ...saved, save: vi.fn().mockResolvedValue(saved) }; });
       const result = await service.copy('prod-1');
       expect(result.sku).toContain('TEST-001-COPY-');
       expect(result.name).toBe('Test Product (копия)');
@@ -110,7 +112,7 @@ describe('ProductsService', () => {
       const photoIds = [validObjectId, validObjectId2];
       mockProductModel.findOne = vi.fn().mockReturnValue({ exec: vi.fn().mockResolvedValue({ ...mockProduct, photoIds }) });
       const saved = { name: 'Test Product (копия)', sku: 'COPY-SKU', photoIds, copiedFromProductId: 'prod-1' };
-      mockProductModel.mockImplementation(() => ({ ...saved, save: vi.fn().mockResolvedValue(saved) }));
+      mockProductModel.mockImplementation(function () { return { ...saved, save: vi.fn().mockResolvedValue(saved) }; });
       expect((await service.copy('prod-1')).photoIds).toEqual(photoIds);
     });
     it('should throw 404 if original not found', async () => {
@@ -119,7 +121,7 @@ describe('ProductsService', () => {
     });
     it('should accept optional dto with custom name/sku', async () => {
       const saved = { name: 'Custom Name', sku: 'CUSTOM-SKU' };
-      mockProductModel.mockImplementation(() => ({ ...saved, save: vi.fn().mockResolvedValue(saved) }));
+      mockProductModel.mockImplementation(function () { return { ...saved, save: vi.fn().mockResolvedValue(saved) }; });
       expect(await service.copy('prod-1', { name: 'Custom Name', sku: 'CUSTOM-SKU' })).toMatchObject(saved);
     });
   });

@@ -1352,8 +1352,8 @@ export class AdminComponent implements OnInit {
    * own click handler ran.
    */
   @HostListener('document:click', ['$event'])
-  @HostListener('document:keydown.escape')
-  onDocumentInteraction(event: MouseEvent | KeyboardEvent): void {
+  @HostListener('document:keydown.escape', ['$event'])
+  onDocumentInteraction(event: Event): void {
     if (this.openGroupId() === null) return;
     if (event instanceof KeyboardEvent) {
       this.openGroupId.set(null);

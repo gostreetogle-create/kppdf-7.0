@@ -7,11 +7,13 @@ import { Role } from './schemas/role.schema';
 
 /** Create a mock Mongoose model: callable constructor + static Query-like methods. */
 function mockModel(defaultData?: Record<string, any>) {
-  const model: any = vi.fn().mockImplementation((data?: Record<string, any>) => ({
-    ...(defaultData ?? {}),
-    ...(data ?? {}),
-    save: vi.fn().mockResolvedValue({ ...(defaultData ?? {}), ...(data ?? {}) }),
-  }));
+  const model: any = vi.fn().mockImplementation(function (data?: Record<string, any>) {
+    return {
+      ...(defaultData ?? {}),
+      ...(data ?? {}),
+      save: vi.fn().mockResolvedValue({ ...(defaultData ?? {}), ...(data ?? {}) }),
+    };
+  });
   model.find    = vi.fn().mockReturnValue({ exec: vi.fn().mockResolvedValue([]) });
   model.findOne  = vi.fn().mockReturnValue({ exec: vi.fn().mockResolvedValue(null) });
   model.findById = vi.fn().mockReturnValue({ exec: vi.fn().mockResolvedValue(null) });
@@ -64,7 +66,7 @@ describe('RolesService', () => {
   describe('create — R1 Ownership Rule', () => {
     it('should allow admin to create with any permissions', async () => {
       const saved = { _id: 'new-id', name: 'custom-role', permissions: ['USERS_READ', 'USERS_WRITE'], isSystemRole: false };
-      mockRoleModel.mockImplementation(() => ({ ...saved, save: vi.fn().mockResolvedValue(saved) }));
+      mockRoleModel.mockImplementation(function () { return { ...saved, save: vi.fn().mockResolvedValue(saved) }; });
       const result = await service.create(
         { name: 'custom-role', permissions: ['USERS_READ', 'USERS_WRITE'] },
         ['USERS_READ', 'USERS_WRITE', 'USERS_DELETE', 'PRODUCTS_READ'] as any,
@@ -78,12 +80,12 @@ describe('RolesService', () => {
     });
     it('should allow empty permissions for any user', async () => {
       const saved = { _id: 'new-id', name: 'empty-role', permissions: [], isSystemRole: false };
-      mockRoleModel.mockImplementation(() => ({ ...saved, save: vi.fn().mockResolvedValue(saved) }));
+      mockRoleModel.mockImplementation(function () { return { ...saved, save: vi.fn().mockResolvedValue(saved) }; });
       expect(await service.create({ name: 'empty-role' }, [] as any)).toEqual(saved);
     });
     it('should skip R1 check when effectivePermissions not provided (legacy/seed call)', async () => {
       const saved = { _id: 'new-id', name: 'seed-role', permissions: ['USERS_READ'], isSystemRole: false };
-      mockRoleModel.mockImplementation(() => ({ ...saved, save: vi.fn().mockResolvedValue(saved) }));
+      mockRoleModel.mockImplementation(function () { return { ...saved, save: vi.fn().mockResolvedValue(saved) }; });
       expect(await service.create({ name: 'seed-role', permissions: ['USERS_READ'] })).toEqual(saved);
     });
   });
@@ -96,7 +98,7 @@ describe('RolesService', () => {
     });
     it('should accept when WRITE has matching READ', async () => {
       const saved = { _id: 'new-id', name: 'good-role', permissions: ['PRODUCTS_READ', 'PRODUCTS_WRITE'], isSystemRole: false };
-      mockRoleModel.mockImplementation(() => ({ ...saved, save: vi.fn().mockResolvedValue(saved) }));
+      mockRoleModel.mockImplementation(function () { return { ...saved, save: vi.fn().mockResolvedValue(saved) }; });
       const result = await service.create(
         { name: 'good-role', permissions: ['PRODUCTS_READ', 'PRODUCTS_WRITE'] },
         ['PRODUCTS_READ', 'PRODUCTS_WRITE', 'PRODUCTS_DELETE'] as any,

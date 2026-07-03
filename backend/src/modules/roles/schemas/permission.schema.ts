@@ -33,5 +33,4 @@ export class Permission extends Document {
 
 export const PermissionSchema = SchemaFactory.createForClass(Permission);
 
-PermissionSchema.index({ key: 1 }, { unique: true });
 PermissionSchema.index({ section: 1, action: 1 });

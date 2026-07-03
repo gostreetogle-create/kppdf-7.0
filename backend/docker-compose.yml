@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Per docs/backend/ARCHITECTURE.md §5 — MongoDB replica set required for multi-document transactions.
 # Per docs/backend/CHECKLIST.md §6.1 row 4.A — Docker Compose up brings MongoDB + Redis online.
 

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import * as fs from 'node:fs';
 import { ImportJob, ImportSourceType, ImportEntityType } from '../schemas/import-job.schema';
 import { IImportStrategy, ProgressCallback } from './i-import.strategy';
@@ -46,20 +46,40 @@ export class ExcelImportStrategy implements IImportStrategy {
       throw new Error(`File not found: ${filePath}`);
     }
 
-    const workbook = XLSX.readFile(filePath);
-    const sheetName = workbook.SheetNames[0];
-    if (!sheetName) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(filePath);
+    const sheet = workbook.worksheets[0];
+    if (!sheet) {
       throw new Error('Excel file has no sheets');
     }
 
-    const rows: ExcelRow[] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+    const rows: ExcelRow[] = [];
+    const headerRow = sheet.getRow(1);
+    const headers: string[] = [];
+    headerRow.eachCell((cell, colNumber) => {
+      headers[colNumber] = String(cell.value ?? '').trim().toLowerCase();
+    });
+
+    for (let rowNum = 2; rowNum <= sheet.rowCount; rowNum++) {
+      const row = sheet.getRow(rowNum);
+      if (row.hasValues) {
+        const obj: ExcelRow = {};
+        row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+          const header = headers[colNumber];
+          if (header) {
+            obj[header] = cell.value;
+          }
+        });
+        rows.push(obj);
+      }
+    }
 
     if (rows.length === 0) {
       await onProgress(0, 0, 0, []);
       return;
     }
 
-    this.log.log(`Parsed ${rows.length} rows from ${filePath} (sheet: ${sheetName})`);
+    this.log.log(`Parsed ${rows.length} rows from ${filePath} (sheet: ${sheet.name})`);
 
     let processed = 0;
     let success = 0;

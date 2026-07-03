@@ -84,11 +84,13 @@
         <div class="spinner-lg"></div>
         <p>Загрузка...</p>
       </div>
-    } @else if (!hasAnyReadPerm()) {
+    } @else {
+      @if (!hasAnyReadPerm()) {
       <div class="no-permissions">
         У вас нет ни одного раздела с правами на чтение. Обратитесь к администратору для назначения роли.
       </div>
-    } @else if (activeTab() === 'roles') {
+      } @else {
+      @if (activeTab() === 'roles') {
       <!-- ═══ ROLES TAB ═══ -->
 
       <!-- Per-stream error chips. loadRoles + loadPermissions (matrix deps)
@@ -219,7 +221,8 @@
           </tbody>
         </table>
       </div>
-    } @else if (activeTab() === 'products') {
+      } @else {
+        @if (activeTab() === 'products') {
       <!-- ═══ PRODUCTS TAB ═══ (full CRUD incl. photo upload + COPY) ═══ -->
 
       <!-- loadProducts error at top of tab -->
@@ -385,7 +388,8 @@
           </tbody>
         </table>
       </div>
-    } @else if (activeTab() === 'organizations') {
+      } @else {
+        @if (activeTab() === 'organizations') {
       <!-- ═══ ORGANIZATIONS TAB ═══ (full CRUD incl. OOO/IP/FL + contacts) ═══ -->
 
       <!-- loadOrganizations error at top of tab -->
@@ -658,7 +662,8 @@
           </tbody>
         </table>
       </div>
-    } @else if (activeTab() === 'import') {
+      } @else {
+        @if (activeTab() === 'import') {
       <!-- ═══ IMPORT TAB ═══ -->
 
       @if (getStreamError('loadImportJobs'); as msg) {
@@ -716,7 +721,7 @@
             class="import-method-tab"
             [class.active]="importMethod() === 'json'"
             (click)="importMethod.set('json')"
-          >{ } JSON</button>
+          >{{ "{ }" }} JSON</button>
         </div>
 
         @if (importMethod() === 'excel') {
@@ -1018,6 +1023,11 @@
           </tbody>
         </table>
       </div>
+        }
+        }
+        }
+      }
+      }
     }
   </main>
 </div>

@@ -40,5 +40,4 @@ UserSchema.set('toJSON', {
   },
 });
 
-UserSchema.index({ username: 1 }, { unique: true });
 UserSchema.index({ roleId: 1 });
