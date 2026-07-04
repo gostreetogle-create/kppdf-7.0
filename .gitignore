@@ -112,6 +112,10 @@ coverage/
 .next/
 .webpack/
 
+# ─── AI / agent tooling ──────────────────────────────────────
+# Workspaces dropped by AI coding agents (e.g. mimocode). Not source.
+.mimocode/
+
 # ─── TypeScript ──────────────────────────────────────────────
 *.d.ts.bak
 
