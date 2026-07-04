@@ -7,6 +7,10 @@ import {
   type User,
   type Product,
   type Organization,
+  type Material,
+  type BomModule,
+  type WorkType,
+  type Employee,
 } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { ADMIN_TABS, type AdminPermKey } from './admin-tabs';
@@ -39,6 +43,10 @@ export type AdminApiSubset = Pick<
   | 'getUsers'
   | 'getProducts'
   | 'getOrganizations'
+  | 'getMaterials'
+  | 'getModules'
+  | 'getWorkTypes'
+  | 'getEmployees'
 >;
 
 /** Same idea for auth: any object exposing `hasPermission(key): boolean`. */
@@ -60,6 +68,10 @@ export interface LoadHooks {
   onUsersLoaded?: (users: User[]) => void;
   onProductsLoaded?: (products: Product[]) => void;
   onOrganizationsLoaded?: (organizations: Organization[]) => void;
+  onMaterialsLoaded?: (materials: Material[]) => void;
+  onModulesLoaded?: (modules: BomModule[]) => void;
+  onWorkTypesLoaded?: (workTypes: WorkType[]) => void;
+  onEmployeesLoaded?: (employees: Employee[]) => void;
   onStreamError: (key: string, msg: string | null) => void;
 }
 
@@ -86,6 +98,10 @@ export interface LoadDeps {
  *   USERS_READ          → loadUsers
  *   PRODUCTS_READ       → loadProducts
  *   ORGANIZATIONS_READ  → loadOrganizations
+ *   MATERIALS_READ      → loadMaterials
+ *   MODULES_READ        → loadModules
+ *   WORKTYPES_READ      → loadWorkTypes
+ *   EMPLOYEES_READ      → loadEmployees
  *
  * Streams the user lacks permission for are not added to the output
  * array. The component layer renders the `no-permissions` placeholder
@@ -155,6 +171,42 @@ export function buildAdminLoadStreams({
         tap((o) => hooks.onOrganizationsLoaded?.(o)),
         catchError(() => {
           report('loadOrganizations', 'Ошибка загрузки организаций');
+          return of(null);
+        }),
+      ),
+    ],
+    MATERIALS_READ: [
+      api.getMaterials().pipe(
+        tap((m) => hooks.onMaterialsLoaded?.(m)),
+        catchError(() => {
+          report('loadMaterials', 'Ошибка загрузки материалов');
+          return of(null);
+        }),
+      ),
+    ],
+    MODULES_READ: [
+      api.getModules().pipe(
+        tap((m) => hooks.onModulesLoaded?.(m)),
+        catchError(() => {
+          report('loadModules', 'Ошибка загрузки модулей');
+          return of(null);
+        }),
+      ),
+    ],
+    WORKTYPES_READ: [
+      api.getWorkTypes().pipe(
+        tap((w) => hooks.onWorkTypesLoaded?.(w)),
+        catchError(() => {
+          report('loadWorkTypes', 'Ошибка загрузки видов работ');
+          return of(null);
+        }),
+      ),
+    ],
+    EMPLOYEES_READ: [
+      api.getEmployees().pipe(
+        tap((e) => hooks.onEmployeesLoaded?.(e)),
+        catchError(() => {
+          report('loadEmployees', 'Ошибка загрузки сотрудников');
           return of(null);
         }),
       ),

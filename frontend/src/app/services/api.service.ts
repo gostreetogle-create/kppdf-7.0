@@ -54,8 +54,19 @@ export interface Product {
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string | null;
+  // BOM-domain extensions (PSL-012). Optional because pre-existing products
+  // created before this commit don't have these fields.
+  status?: ProductStatus;
+  productModuleIds?: string[];
 }
 
+// ─── BOM domain extensions on Product (PSL-012) ─────
+export type ProductStatus =
+  | 'DRAFT'
+  | 'READY'
+  | 'IN_PRODUCTION'
+  | 'COMPLETED'
+  | 'ARCHIVED';
 export interface CreateProductDto {
   name: string;
   sku: string;
@@ -65,6 +76,8 @@ export interface CreateProductDto {
   price?: number;
   cost?: number;
   photoIds: string[];
+  status?: ProductStatus;
+  productModuleIds?: string[];
 }
 
 export interface UpdateProductDto {
@@ -76,6 +89,13 @@ export interface UpdateProductDto {
   price?: number;
   cost?: number;
   photoIds?: string[];
+  status?: ProductStatus;
+  productModuleIds?: string[];
+}
+
+export interface ComputeProductCostResult {
+  totalCost: number;
+  modules: Array<{ moduleId: string; name: string; cost: number }>;
 }
 
 // ─── Organizations ────────────────────────────
@@ -163,6 +183,183 @@ export interface UpdateOrganizationDto {
   partyTypes?: PartyType[];
   contacts?: OrganizationContact[];
 }
+
+// ─── BOM domain — Materials (PSL-012) ──────────
+export const MATERIAL_UNITS = [
+  'mm',
+  'cm',
+  'm',
+  'kg',
+  'g',
+  'pcs',
+] as const;
+export type MaterialUnit = (typeof MATERIAL_UNITS)[number];
+
+export interface MaterialDimensions {
+  length?: number;
+  width?: number;
+  height?: number;
+  diameter?: number;
+  thickness?: number;
+}
+
+export interface MaterialFixedDimensions {
+  length?: boolean;
+  width?: boolean;
+  height?: boolean;
+  diameter?: boolean;
+  thickness?: boolean;
+}
+
+export interface Material {
+  _id: string;
+  name: string;
+  sku: string;
+  supplierId: string;
+  category?: string;
+  unit: MaterialUnit;
+  pricePerUnit: number;
+  priceCurrency?: string;
+  dimensions?: MaterialDimensions;
+  fixedDimensions?: MaterialFixedDimensions;
+  photoIds?: string[];
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+}
+
+export interface CreateMaterialDto {
+  name: string;
+  sku: string;
+  supplierId: string;
+  unit: MaterialUnit;
+  pricePerUnit: number;
+  category?: string;
+  priceCurrency?: string;
+  dimensions?: MaterialDimensions;
+  fixedDimensions?: MaterialFixedDimensions;
+  photoIds?: string[];
+  notes?: string;
+}
+
+export type UpdateMaterialDto = Partial<CreateMaterialDto>;
+
+// ─── BOM domain — Modules (PSL-012; entity in backend is BomModule) ─────
+export interface ModuleMaterial {
+  materialId: string;
+  qty: number;
+  unit?: string;
+  usedDimensions?: MaterialDimensions;
+  order?: number;
+}
+
+export interface ModuleWork {
+  workTypeId: string;
+  hours: number;
+  overrideRate?: number;
+  order?: number;
+}
+
+export interface BomModuleDimensions {
+  length?: number;
+  width?: number;
+  height?: number;
+}
+
+export interface BomModule {
+  _id: string;
+  name: string;
+  /** BR-MOD-3: regex ^[A-Z0-9-]+$, 3–32 chars. */
+  sku: string;
+  category?: string;
+  notes?: string;
+  dimensions?: BomModuleDimensions;
+  childModuleIds: string[];
+  moduleMaterials: ModuleMaterial[];
+  moduleWorks: ModuleWork[];
+  photoIds?: string[];
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+}
+
+export interface CreateBomModuleDto {
+  name: string;
+  sku: string;
+  category?: string;
+  notes?: string;
+  dimensions?: BomModuleDimensions;
+  childModuleIds?: string[];
+  moduleMaterials?: ModuleMaterial[];
+  moduleWorks?: ModuleWork[];
+  photoIds?: string[];
+}
+
+export type UpdateBomModuleDto = Partial<CreateBomModuleDto>;
+
+/**
+ * BR-MOD-8: live cost rollup. Re-computed on every call (no cache).
+ * breakdown is a flat list of material/work/module entries with per-line costs.
+ */
+export interface ComputeModuleCostResult {
+  materialsCost: number;
+  worksCost: number;
+  childModulesCost: number;
+  totalCost: number;
+  breakdown: Array<{
+    type: 'material' | 'work' | 'module';
+    refId: string;
+    name: string;
+    qty?: number;
+    hours?: number;
+    unitCost?: number;
+    totalCost: number;
+  }>;
+}
+
+// ─── BOM domain — WorkTypes (PSL-012) ──────────
+export interface WorkType {
+  _id: string;
+  name: string;
+  /** RUB/hour default hire rate (BR-WT-1) */
+  hourlyRate: number;
+  description?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+}
+
+export interface CreateWorkTypeDto {
+  name: string;
+  hourlyRate: number;
+  description?: string;
+}
+
+export type UpdateWorkTypeDto = Partial<CreateWorkTypeDto>;
+
+// ─── BOM domain — Employees (PSL-012) ──────────
+export interface Employee {
+  _id: string;
+  name: string;
+  fullName?: string;
+  phone?: string;
+  email?: string;
+  active?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+}
+
+export interface CreateEmployeeDto {
+  name: string;
+  fullName?: string;
+  phone?: string;
+  email?: string;
+  active?: boolean;
+}
+
+export type UpdateEmployeeDto = Partial<CreateEmployeeDto>;
 
 // ─── Photos / Storage ─────────────────────────
 /**
@@ -328,6 +525,37 @@ export class ApiService {
     return this.http.delete<void>(`${this.baseUrl}/products/${id}`);
   }
 
+  /**
+   * PATCH /api/products/:id — pass only `{ status: 'READY' }` etc.
+   * BR-PRD-5: status transition DRAFT → READY → IN_PRODUCTION → COMPLETED → ARCHIVED.
+   */
+  setProductStatus(id: string, status: ProductStatus) {
+    return this.http.patch<Product>(`${this.baseUrl}/products/${id}`, { status });
+  }
+
+  /**
+   * PATCH /api/products/:id — replace productModuleIds[] wholesale.
+   * BR-PRD-6: a product is composed of 1+ operational modules.
+   */
+  setProductModules(
+    id: string,
+    productModuleIds: string[],
+  ) {
+    return this.http.patch<Product>(`${this.baseUrl}/products/${id}`, {
+      productModuleIds,
+    });
+  }
+
+  /**
+   * GET /api/products/:id/compute-cost — Σ(active module totalCost).
+   * (Backend returns ComputeProductCostResult, see api.service.ts.)
+   */
+  computeProductCost(id: string) {
+    return this.http.get<ComputeProductCostResult>(
+      `${this.baseUrl}/products/${id}/compute-cost`,
+    );
+  }
+
   // ═══════════════════════════════════════════
   // Organizations
   // ═══════════════════════════════════════════
@@ -356,6 +584,117 @@ export class ApiService {
 
   deleteOrganization(id: string) {
     return this.http.delete<void>(`${this.baseUrl}/organizations/${id}`);
+  }
+
+  // ═══════════════════════════════════════════
+  // BOM domain — Materials (PSL-012)
+  // ═══════════════════════════════════════════
+
+  getMaterials() {
+    return this.http.get<Material[]>(`${this.baseUrl}/materials`);
+  }
+
+  getMaterial(id: string) {
+    return this.http.get<Material>(`${this.baseUrl}/materials/${id}`);
+  }
+
+  createMaterial(data: CreateMaterialDto) {
+    return this.http.post<Material>(`${this.baseUrl}/materials`, data);
+  }
+
+  updateMaterial(id: string, data: UpdateMaterialDto) {
+    return this.http.patch<Material>(`${this.baseUrl}/materials/${id}`, data);
+  }
+
+  deleteMaterial(id: string) {
+    return this.http.delete<void>(`${this.baseUrl}/materials/${id}`);
+  }
+
+  // ═══════════════════════════════════════════
+  // BOM domain — Modules (PSL-012; backend entity is BomModule)
+  // ═══════════════════════════════════════════
+
+  getModules() {
+    return this.http.get<BomModule[]>(`${this.baseUrl}/modules`);
+  }
+
+  getBomModule(id: string) {
+    return this.http.get<BomModule>(`${this.baseUrl}/modules/${id}`);
+  }
+
+  createBomModule(data: CreateBomModuleDto) {
+    return this.http.post<BomModule>(`${this.baseUrl}/modules`, data);
+  }
+
+  updateBomModule(id: string, data: UpdateBomModuleDto) {
+    return this.http.patch<BomModule>(
+      `${this.baseUrl}/modules/${id}`,
+      data,
+    );
+  }
+
+  deleteBomModule(id: string) {
+    return this.http.delete<void>(`${this.baseUrl}/modules/${id}`);
+  }
+
+  /**
+   * GET /api/modules/:id/compute-cost — BR-MOD-8 live rollup.
+   */
+  computeModuleCost(id: string) {
+    return this.http.get<ComputeModuleCostResult>(
+      `${this.baseUrl}/modules/${id}/compute-cost`,
+    );
+  }
+
+  // ═══════════════════════════════════════════
+  // BOM domain — WorkTypes (PSL-012)
+  // ═══════════════════════════════════════════
+
+  getWorkTypes() {
+    return this.http.get<WorkType[]>(`${this.baseUrl}/work-types`);
+  }
+
+  getWorkType(id: string) {
+    return this.http.get<WorkType>(`${this.baseUrl}/work-types/${id}`);
+  }
+
+  createWorkType(data: CreateWorkTypeDto) {
+    return this.http.post<WorkType>(`${this.baseUrl}/work-types`, data);
+  }
+
+  updateWorkType(id: string, data: UpdateWorkTypeDto) {
+    return this.http.patch<WorkType>(
+      `${this.baseUrl}/work-types/${id}`,
+      data,
+    );
+  }
+
+  deleteWorkType(id: string) {
+    return this.http.delete<void>(`${this.baseUrl}/work-types/${id}`);
+  }
+
+  // ═══════════════════════════════════════════
+  // BOM domain — Employees (PSL-012)
+  // ═══════════════════════════════════════════
+
+  getEmployees() {
+    return this.http.get<Employee[]>(`${this.baseUrl}/employees`);
+  }
+
+  getEmployee(id: string) {
+    return this.http.get<Employee>(`${this.baseUrl}/employees/${id}`);
+  }
+
+  createEmployee(data: CreateEmployeeDto) {
+    return this.http.post<Employee>(`${this.baseUrl}/employees`, data);
+  }
+
+  updateEmployee(id: string, data: UpdateEmployeeDto) {
+    return this.http.patch<Employee>(`${this.baseUrl}/employees/${id}`, data);
+  }
+
+  deleteEmployee(id: string) {
+    return this.http.delete<void>(`${this.baseUrl}/employees/${id}`);
   }
 
   // ═══════════════════════════════════════════

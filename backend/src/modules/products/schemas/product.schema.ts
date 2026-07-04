@@ -1,6 +1,14 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import mongoose, { Document } from 'mongoose';
 
+export enum ProductStatus {
+  DRAFT = 'DRAFT',
+  READY = 'READY',
+  IN_PRODUCTION = 'IN_PRODUCTION',
+  COMPLETED = 'COMPLETED',
+  ARCHIVED = 'ARCHIVED',
+}
+
 @Schema({ collection: 'products', timestamps: true })
 export class Product extends Document {
   @Prop({ required: true, type: String })
@@ -38,6 +46,24 @@ export class Product extends Document {
     default: null,
   })
   copiedFromProductId!: mongoose.Types.ObjectId | null;
+
+  // === Product lifecycle status (PSL-012) ===
+  // DRAFT → READY → IN_PRODUCTION → COMPLETED → ARCHIVED
+  // UI changes this via status badge / dropdown.
+  @Prop({
+    type: String,
+    enum: Object.values(ProductStatus),
+    default: ProductStatus.DRAFT,
+  })
+  status!: ProductStatus;
+
+  // === BOM modules (PSL-012) ===
+  // Товар состоит из модулей. Цена = Σ(modules.computeCost) + наценка.
+  @Prop({
+    type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'BomModule' }],
+    default: [],
+  })
+  productModuleIds!: mongoose.Types.ObjectId[];
 
   @Prop({ default: null, type: Date })
   deletedAt!: Date | null;

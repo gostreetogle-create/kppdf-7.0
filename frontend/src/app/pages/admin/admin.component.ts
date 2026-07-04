@@ -22,6 +22,17 @@ import {
   type LegalType,
   type PartyType,
   type OrganizationContact,
+  type Material,
+  type BomModule,
+  type WorkType,
+  type Employee,
+  type ProductStatus,
+  type ModuleMaterial,
+  type ModuleWork,
+  type CreateMaterialDto,
+  type CreateBomModuleDto,
+  type CreateWorkTypeDto,
+  type CreateEmployeeDto,
 } from '../../services/api.service';
 import { ADMIN_TABS, NAV_GROUPS, type AdminNavGroup, type AdminNavGroupId, type AdminTabName } from './admin-tabs';
 
@@ -123,6 +134,11 @@ export class AdminComponent implements OnInit {
   readonly users = signal<User[]>([]);
   readonly products = signal<Product[]>([]);
   readonly organizations = signal<Organization[]>([]);
+  // BOM domain (PSL-012) — four new entities, one signal each.
+  readonly materials = signal<Material[]>([]);
+  readonly modules = signal<BomModule[]>([]);
+  readonly workTypes = signal<WorkType[]>([]);
+  readonly employees = signal<Employee[]>([]);
   /**
    * Per-stream error map. Each key is a stream name; the value is a
    * human-readable error message (or `null` if the slot is empty). Keys:
@@ -219,6 +235,96 @@ export class AdminComponent implements OnInit {
 
   /** Which nav-group's dropdown panel is currently open (null = none). */
   readonly openGroupId = signal<AdminNavGroupId | null>(null);
+
+  // ━━ BOM domain (PSL-012) — 4 new entities + 4 form groups ━━━━━━
+
+  /** All product status values + their human labels (BR-PRD-5). */
+  readonly PRODUCT_STATUSES: ProductStatus[] = [
+    'DRAFT',
+    'READY',
+    'IN_PRODUCTION',
+    'COMPLETED',
+    'ARCHIVED',
+  ];
+  readonly PRODUCT_STATUS_LABELS: Record<ProductStatus, string> = {
+    DRAFT: 'Черновик',
+    READY: 'Готов к реализации',
+    IN_PRODUCTION: 'В производстве',
+    COMPLETED: 'Завершён',
+    ARCHIVED: 'В архиве',
+  };
+
+  // ── Materials ──
+  readonly editingMaterial = signal<Material | null>(null);
+  readonly showMaterialForm = signal(false);
+  readonly materialForm = this.fb.nonNullable.group({
+    name: ['', [Validators.required, Validators.minLength(2)]],
+    sku: [
+      '',
+      [
+        // BR-MAT-3: regex ^MAT-[A-Z0-9-]+$, 8–50 chars (validated backend-side too).
+        Validators.required,
+        Validators.pattern(/^MAT-[A-Z0-9-]+$/),
+        Validators.minLength(8),
+        Validators.maxLength(50),
+      ],
+    ],
+    supplierId: ['', [Validators.required]],
+    unit: ['', [Validators.required]],
+    pricePerUnit: [0, [Validators.min(0)]],
+    category: [''],
+    priceCurrency: ['RUB'],
+    notes: [''],
+  });
+
+  // ── Modules (BOM) ──
+  readonly editingModule = signal<BomModule | null>(null);
+  readonly showModuleForm = signal(false);
+  readonly moduleForm = this.fb.nonNullable.group({
+    name: ['', [Validators.required, Validators.minLength(2)]],
+    sku: [
+      '',
+      [
+        // BR-MOD-3: regex ^[A-Z0-9-]+$, 3–32 chars.
+        Validators.required,
+        Validators.pattern(/^[A-Z0-9-]+$/),
+        Validators.minLength(3),
+        Validators.maxLength(32),
+      ],
+    ],
+    category: [''],
+    notes: [''],
+  });
+
+  // ── WorkTypes ──
+  readonly editingWorkType = signal<WorkType | null>(null);
+  readonly showWorkTypeForm = signal(false);
+  readonly workTypeForm = this.fb.nonNullable.group({
+    name: ['', [Validators.required, Validators.minLength(2)]],
+    hourlyRate: [0, [Validators.required, Validators.min(0)]],
+    description: [''],
+  });
+
+  // ── Employees ──
+  readonly editingEmployee = signal<Employee | null>(null);
+  readonly showEmployeeForm = signal(false);
+  readonly employeeForm = this.fb.nonNullable.group({
+    name: ['', [Validators.required, Validators.minLength(2)]],
+    fullName: [''],
+    phone: [''],
+    email: ['', [Validators.email]],
+    active: [true],
+  });
+
+  // ── BOM Materials / Works sub-arrays (module form detail) ──
+  readonly moduleMaterials = signal<ModuleMaterial[]>([]);
+  readonly moduleWorks = signal<ModuleWork[]>([]);
+  readonly computeModuleCostResult = signal<{
+    materialsCost: number;
+    worksCost: number;
+    childModulesCost: number;
+    totalCost: number;
+  } | null>(null);
 
   // ━━ Role editing ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   readonly editingRole = signal<Role | null>(null);
@@ -371,6 +477,10 @@ export class AdminComponent implements OnInit {
         onUsersLoaded: (u) => this.users.set(u),
         onProductsLoaded: (p) => this.products.set(p),
         onOrganizationsLoaded: (o) => this.organizations.set(o),
+        onMaterialsLoaded: (m) => this.materials.set(m),
+        onModulesLoaded: (m) => this.modules.set(m),
+        onWorkTypesLoaded: (w) => this.workTypes.set(w),
+        onEmployeesLoaded: (e) => this.employees.set(e),
         onStreamError: (k, m) => this.setStreamError(k, m),
       },
     });
@@ -1181,5 +1291,478 @@ export class AdminComponent implements OnInit {
 
   logout(): void {
     this.auth.logout();
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // BOM domain (PSL-012) — CRUD for Materials, Modules, WorkTypes,
+  // Employees + Product status/modules extension + computeModuleCost.
+  // Aliases below are deliberately short — each tab UI shows 4 pipes per
+  // entity. Naming convention matches existing methods (openNewX / saveX).
+  // ════════════════════════════════════════════════════════════════════
+
+  /** LABELS for Material.unit enum (admin.component.html). */
+  readonly MATERIAL_UNIT_LABELS: Record<string, string> = {
+    mm: 'мм',
+    cm: 'см',
+    m: 'м',
+    kg: 'кг',
+    g: 'г',
+    pcs: 'шт.',
+  };
+
+  /** Material CRUD ────────────────────────────────────────────── */
+
+  openNewMaterial(): void {
+    this.editingMaterial.set(null);
+    this.materialForm.reset({
+      name: '',
+      sku: '',
+      supplierId: '',
+      unit: 'pcs',
+      pricePerUnit: 0,
+      category: '',
+      priceCurrency: 'RUB',
+      notes: '',
+    });
+    this.showMaterialForm.set(true);
+  }
+
+  editMaterial(mat: Material): void {
+    this.editingMaterial.set(mat);
+    this.materialForm.patchValue({
+      name: mat.name,
+      sku: mat.sku,
+      supplierId: mat.supplierId,
+      unit: mat.unit,
+      pricePerUnit: mat.pricePerUnit,
+      category: mat.category ?? '',
+      priceCurrency: mat.priceCurrency ?? 'RUB',
+      notes: mat.notes ?? '',
+    });
+    this.showMaterialForm.set(true);
+  }
+
+  saveMaterial(): void {
+    if (!this.auth.hasPermission('MATERIALS_WRITE')) return;
+    if (this.materialForm.invalid) return;
+    const raw = this.materialForm.getRawValue();
+    const data: CreateMaterialDto = {
+      name: raw.name,
+      sku: raw.sku,
+      supplierId: raw.supplierId,
+      unit: raw.unit as CreateMaterialDto['unit'],
+      pricePerUnit: raw.pricePerUnit,
+      category: raw.category || undefined,
+      priceCurrency: raw.priceCurrency || undefined,
+      notes: raw.notes || undefined,
+    };
+    const edit = this.editingMaterial();
+    const obs$ = edit
+      ? this.api.updateMaterial(edit._id, data)
+      : this.api.createMaterial(data);
+    obs$.subscribe({
+      next: (saved) => {
+        this.materials.update((list) => {
+          const idx = list.findIndex((m) => m._id === saved._id);
+          if (idx >= 0) list[idx] = saved;
+          else list.push(saved);
+          return [...list];
+        });
+        this.setStreamError('saveMaterial', null);
+        this.showMaterialForm.set(false);
+      },
+      error: (err) =>
+        this.setStreamError(
+          'saveMaterial',
+          this.extractErrorMessage(err, 'Ошибка сохранения материала'),
+        ),
+    });
+  }
+
+  deleteMaterial(mat: Material): void {
+    if (!confirm(`Удалить материал "${mat.name}"?`)) return;
+    this.api.deleteMaterial(mat._id).subscribe({
+      next: () =>
+        this.materials.update((list) =>
+          list.filter((m) => m._id !== mat._id),
+        ),
+      error: (err) =>
+        this.setStreamError(
+          'deleteMaterial',
+          this.extractErrorMessage(err, 'Ошибка удаления материала'),
+        ),
+    });
+  }
+
+  /** Suppliers for material.supplierId dropdown (BR-MAT-1: must be a SUPPLIER-party org). */
+  suppliers = computed(() =>
+    this.organizations().filter((o) => o.partyTypes?.includes('SUPPLIER')),
+  );
+
+  getSupplierName(id: string): string {
+    const org = this.organizations().find((o) => o._id === id);
+    return org?.name ?? id;
+  }
+
+  /** Module CRUD ─────────────────────────────────────────────── */
+
+  openNewModule(): void {
+    this.editingModule.set(null);
+    this.moduleForm.reset({ name: '', sku: '', category: '', notes: '' });
+    this.moduleMaterials.set([]);
+    this.moduleWorks.set([]);
+    this.computeModuleCostResult.set(null);
+    this.showModuleForm.set(true);
+  }
+
+  editModule(m: BomModule): void {
+    this.editingModule.set(m);
+    this.moduleForm.patchValue({
+      name: m.name,
+      sku: m.sku,
+      category: m.category ?? '',
+      notes: m.notes ?? '',
+    });
+    this.moduleMaterials.set(m.moduleMaterials ?? []);
+    this.moduleWorks.set(m.moduleWorks ?? []);
+    this.computeModuleCostResult.set(null);
+    this.showModuleForm.set(true);
+  }
+
+  /**
+   * BR-MOD-8: live cost rollup — no caching on backend side either.
+   * Shows the result in the Module form for visual feedback before save.
+   */
+  computeModuleCost(moduleId: string): void {
+    if (!moduleId) {
+      this.computeModuleCostResult.set(null);
+      return;
+    }
+    this.api.computeModuleCost(moduleId).subscribe({
+      next: (res) =>
+        this.computeModuleCostResult.set({
+          materialsCost: res.materialsCost,
+          worksCost: res.worksCost,
+          childModulesCost: res.childModulesCost,
+          totalCost: res.totalCost,
+        }),
+      error: () => this.computeModuleCostResult.set(null),
+    });
+  }
+
+  saveModule(): void {
+    if (!this.auth.hasPermission('MODULES_WRITE')) return;
+    if (this.moduleForm.invalid) return;
+    const raw = this.moduleForm.getRawValue();
+    const data: CreateBomModuleDto = {
+      name: raw.name,
+      sku: raw.sku,
+      category: raw.category || undefined,
+      notes: raw.notes || undefined,
+      moduleMaterials: this.moduleMaterials(),
+      moduleWorks: this.moduleWorks(),
+    };
+    const edit = this.editingModule();
+    const obs$ = edit
+      ? this.api.updateBomModule(edit._id, data)
+      : this.api.createBomModule(data);
+    obs$.subscribe({
+      next: (saved) => {
+        this.modules.update((list) => {
+          const idx = list.findIndex((m) => m._id === saved._id);
+          if (idx >= 0) list[idx] = saved;
+          else list.push(saved);
+          return [...list];
+        });
+        this.setStreamError('saveModule', null);
+        this.showModuleForm.set(false);
+      },
+      error: (err) =>
+        this.setStreamError(
+          'saveModule',
+          this.extractErrorMessage(err, 'Ошибка сохранения модуля'),
+        ),
+    });
+  }
+
+  deleteModule(m: BomModule): void {
+    if (!confirm(`Удалить модуль "${m.name}"?`)) return;
+    this.api.deleteBomModule(m._id).subscribe({
+      next: () =>
+        this.modules.update((list) =>
+          list.filter((mod) => mod._id !== m._id),
+        ),
+      error: (err) =>
+        this.setStreamError(
+          'deleteModule',
+          this.extractErrorMessage(err, 'Ошибка удаления модуля'),
+        ),
+    });
+  }
+
+  /** Material ↔ Module helpers (used in Module form) ─────────── */
+
+  getMaterialName(id: string): string {
+    return this.materials().find((m) => m._id === id)?.name ?? id;
+  }
+
+  getWorkTypeName(id: string): string {
+    return this.workTypes().find((w) => w._id === id)?.name ?? id;
+  }
+
+  addMaterialToModule(): void {
+    const firstAvailable = this.materials().find(
+      (m) =>
+        !this.moduleMaterials().some((mm) => mm.materialId === m._id) &&
+        !m.deletedAt,
+    );
+    if (!firstAvailable) {
+      this.setStreamError(
+        'saveModule',
+        'Нет доступных материалов — сначала создайте материал',
+      );
+      return;
+    }
+    this.moduleMaterials.update((arr) => [
+      ...arr,
+      { materialId: firstAvailable._id, qty: 1, order: arr.length },
+    ]);
+  }
+
+  removeMaterialFromModule(idx: number): void {
+    this.moduleMaterials.update((arr) => arr.filter((_, i) => i !== idx));
+  }
+
+  addWorkToModule(): void {
+    const firstAvailable = this.workTypes().find(
+      (w) => !w.deletedAt && !this.moduleWorks().some((mw) => mw.workTypeId === w._id),
+    );
+    if (!firstAvailable) {
+      this.setStreamError(
+        'saveModule',
+        'Нет доступных видов работ — сначала создайте WorkType',
+      );
+      return;
+    }
+    this.moduleWorks.update((arr) => [
+      ...arr,
+      { workTypeId: firstAvailable._id, hours: 1, order: arr.length },
+    ]);
+  }
+
+  removeWorkFromModule(idx: number): void {
+    this.moduleWorks.update((arr) => arr.filter((_, i) => i !== idx));
+  }
+
+  /** WorkType CRUD ──────────────────────────────────────────── */
+
+  openNewWorkType(): void {
+    this.editingWorkType.set(null);
+    this.workTypeForm.reset({ name: '', hourlyRate: 0, description: '' });
+    this.showWorkTypeForm.set(true);
+  }
+
+  editWorkType(w: WorkType): void {
+    this.editingWorkType.set(w);
+    this.workTypeForm.patchValue({
+      name: w.name,
+      hourlyRate: w.hourlyRate,
+      description: w.description ?? '',
+    });
+    this.showWorkTypeForm.set(true);
+  }
+
+  saveWorkType(): void {
+    if (!this.auth.hasPermission('WORKTYPES_WRITE')) return;
+    if (this.workTypeForm.invalid) return;
+    const raw = this.workTypeForm.getRawValue();
+    const data: CreateWorkTypeDto = {
+      name: raw.name,
+      hourlyRate: raw.hourlyRate,
+      description: raw.description || undefined,
+    };
+    const edit = this.editingWorkType();
+    const obs$ = edit
+      ? this.api.updateWorkType(edit._id, data)
+      : this.api.createWorkType(data);
+    obs$.subscribe({
+      next: (saved) => {
+        this.workTypes.update((list) => {
+          const idx = list.findIndex((w) => w._id === saved._id);
+          if (idx >= 0) list[idx] = saved;
+          else list.push(saved);
+          return [...list];
+        });
+        this.setStreamError('saveWorkType', null);
+        this.showWorkTypeForm.set(false);
+      },
+      error: (err) =>
+        this.setStreamError(
+          'saveWorkType',
+          this.extractErrorMessage(err, 'Ошибка сохранения вида работ'),
+        ),
+    });
+  }
+
+  deleteWorkType(w: WorkType): void {
+    if (!confirm(`Удалить вид работ "${w.name}"?`)) return;
+    this.api.deleteWorkType(w._id).subscribe({
+      next: () =>
+        this.workTypes.update((list) =>
+          list.filter((x) => x._id !== w._id),
+        ),
+      error: (err) =>
+        this.setStreamError(
+          'deleteWorkType',
+          this.extractErrorMessage(err, 'Ошибка удаления вида работ'),
+        ),
+    });
+  }
+
+  /** Employee CRUD ───────────────────────────────────────────── */
+
+  openNewEmployee(): void {
+    this.editingEmployee.set(null);
+    this.employeeForm.reset({
+      name: '',
+      fullName: '',
+      phone: '',
+      email: '',
+      active: true,
+    });
+    this.showEmployeeForm.set(true);
+  }
+
+  editEmployee(emp: Employee): void {
+    this.editingEmployee.set(emp);
+    this.employeeForm.patchValue({
+      name: emp.name,
+      fullName: emp.fullName ?? '',
+      phone: emp.phone ?? '',
+      email: emp.email ?? '',
+      active: emp.active ?? true,
+    });
+    this.showEmployeeForm.set(true);
+  }
+
+  saveEmployee(): void {
+    if (!this.auth.hasPermission('EMPLOYEES_WRITE')) return;
+    if (this.employeeForm.invalid) return;
+    const raw = this.employeeForm.getRawValue();
+    const data: CreateEmployeeDto = {
+      name: raw.name,
+      fullName: raw.fullName || undefined,
+      phone: raw.phone || undefined,
+      email: raw.email || undefined,
+      active: raw.active,
+    };
+    const edit = this.editingEmployee();
+    const obs$ = edit
+      ? this.api.updateEmployee(edit._id, data)
+      : this.api.createEmployee(data);
+    obs$.subscribe({
+      next: (saved) => {
+        this.employees.update((list) => {
+          const idx = list.findIndex((e) => e._id === saved._id);
+          if (idx >= 0) list[idx] = saved;
+          else list.push(saved);
+          return [...list];
+        });
+        this.setStreamError('saveEmployee', null);
+        this.showEmployeeForm.set(false);
+      },
+      error: (err) =>
+        this.setStreamError(
+          'saveEmployee',
+          this.extractErrorMessage(err, 'Ошибка сохранения сотрудника'),
+        ),
+    });
+  }
+
+  deleteEmployee(emp: Employee): void {
+    if (!confirm(`Удалить сотрудника "${emp.name}"?`)) return;
+    this.api.deleteEmployee(emp._id).subscribe({
+      next: () =>
+        this.employees.update((list) =>
+          list.filter((e) => e._id !== emp._id),
+        ),
+      error: (err) =>
+        this.setStreamError(
+          'deleteEmployee',
+          this.extractErrorMessage(err, 'Ошибка удаления сотрудника'),
+        ),
+    });
+  }
+
+  /** Product extensions (BR-PRD-5 status + BR-PRD-6 modules) ───── */
+
+  translateProductStatus(s: ProductStatus | undefined | null): string {
+    return s ? this.PRODUCT_STATUS_LABELS[s] ?? s : '—';
+  }
+
+  /** Quick status toggle from table — single PATCH. */
+  changeProductStatus(product: Product, next: ProductStatus): void {
+    if (!this.auth.hasPermission('PRODUCTS_WRITE')) return;
+    this.api.setProductStatus(product._id, next).subscribe({
+      next: (saved) => {
+        this.products.update((list) =>
+          list.map((p) => (p._id === saved._id ? saved : p)),
+        );
+        this.setStreamError('productStatus', null);
+      },
+      error: (err) =>
+        this.setStreamError(
+          'productStatus',
+          this.extractErrorMessage(err, 'Ошибка изменения статуса'),
+        ),
+    });
+  }
+
+  /** Resolve productModuleIds → BomModule info for table display. */
+  getModuleName(id: string): string {
+    return this.modules().find((m) => m._id === id)?.name ?? id;
+  }
+
+  /** Add a module to a product (sets productModuleIds[] wholesale). */
+  addModuleToProduct(product: Product, moduleId: string): void {
+    const current = (product as any).productModuleIds as
+      | string[]
+      | undefined;
+    if (current?.includes(moduleId)) return;
+    const next = [...(current ?? []), moduleId];
+    this.api.setProductModules(product._id, next).subscribe({
+      next: (saved) => {
+        this.products.update((list) =>
+          list.map((p) => (p._id === saved._id ? saved : p)),
+        );
+        this.setStreamError('productModules', null);
+      },
+      error: (err) =>
+        this.setStreamError(
+          'productModules',
+          this.extractErrorMessage(err, 'Ошибка привязки модуля'),
+        ),
+    });
+  }
+
+  removeModuleFromProduct(product: Product, moduleId: string): void {
+    const current = (product as any).productModuleIds as
+      | string[]
+      | undefined;
+    if (!current?.includes(moduleId)) return;
+    const next = current.filter((id) => id !== moduleId);
+    this.api.setProductModules(product._id, next).subscribe({
+      next: (saved) => {
+        this.products.update((list) =>
+          list.map((p) => (p._id === saved._id ? saved : p)),
+        );
+        this.setStreamError('productModules', null);
+      },
+      error: (err) =>
+        this.setStreamError(
+          'productModules',
+          this.extractErrorMessage(err, 'Ошибка отвязки модуля'),
+        ),
+    });
   }
 }

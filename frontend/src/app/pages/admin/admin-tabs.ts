@@ -38,11 +38,37 @@ export const ADMIN_TABS = [
     perm: 'ORGANIZATIONS_READ',
     navGroup: 'catalog',
   },
+  // BOM domain (PSL-012). All four live under a single 'bom' nav group
+  // so the top-nav stays compact even after adding 4 new entities.
+  {
+    tab: 'materials',
+    label: 'Материалы',
+    perm: 'MATERIALS_READ',
+    navGroup: 'bom',
+  },
+  {
+    tab: 'modules',
+    label: 'Модули (BOM)',
+    perm: 'MODULES_READ',
+    navGroup: 'bom',
+  },
+  {
+    tab: 'workTypes',
+    label: 'Виды работ',
+    perm: 'WORKTYPES_READ',
+    navGroup: 'bom',
+  },
+  {
+    tab: 'employees',
+    label: 'Сотрудники',
+    perm: 'EMPLOYEES_READ',
+    navGroup: 'bom',
+  },
 ] as const;
 
 export type AdminTabName = (typeof ADMIN_TABS)[number]['tab'];
 export type AdminPermKey = (typeof ADMIN_TABS)[number]['perm'];
-export type AdminNavGroupId = 'system' | 'catalog';
+export type AdminNavGroupId = 'system' | 'catalog' | 'bom';
 
 /**
  * Shape of a single dropdown nav group (`NAV_GROUPS[i]`). Consumers
@@ -77,5 +103,10 @@ export const NAV_GROUPS: readonly {
     id: 'catalog',
     label: 'Каталог',
     items: ADMIN_TABS.filter((t) => t.navGroup === 'catalog'),
+  },
+  {
+    id: 'bom',
+    label: 'BOM',
+    items: ADMIN_TABS.filter((t) => t.navGroup === 'bom'),
   },
 ];

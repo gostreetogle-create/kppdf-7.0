@@ -22,6 +22,7 @@
 | 1 | [`schemas/01-core-users.md`](schemas/01-core-users.md) | **Permission**, **Role**, **User** | Identity + RBAC фундамент |
 | 2 | [`schemas/02-business-domain.md`](schemas/02-business-domain.md) | **Organization**, **Product** | Бизнес-домен (CRUD + COPY) |
 | 3 | [`schemas/03-storage-and-import.md`](schemas/03-storage-and-import.md) | **Photo**, **ImportJob** | Storage (Photo cluster) + async ingestion |
+| 4 | [`schemas/04-bom.md`](schemas/04-bom.md) | **Material**, **Module**, **WorkType**, **Employee** | BOM (Bill of Materials) — иерархия Product → Module → (Material \| Work \| Module). Справочники работ и сотрудников для будущего Gantt. |
 
 ## 2. Цели и ограничения
 
@@ -45,6 +46,10 @@
 | 5 | Product | `_products` | strong (unique compound `[name, sku]`) | [`02-business-domain.md §2`](schemas/02-business-domain.md#2-product) |
 | 6 | Photo | `_photos` | soft + cluster (3-doc-per-upload) | [`03-storage-and-import.md §1`](schemas/03-storage-and-import.md#1-photo) |
 | 7 | ImportJob | `_importJobs` | state-machine (PENDING → PROCESSING → COMPLETED/FAILED) | [`03-storage-and-import.md §2`](schemas/03-storage-and-import.md#2-importjob). **Frontend этого репозитория его НЕ consume'ит** — UI живёт в отдельном admin-app (см. PSL-010). |
+| 8 | Material | `_materials` | BOM-каталог: цена за единицу + dimensions с per-dim `fixed` флагами, supplier (→ Organization) | [`04-bom.md §1`](schemas/04-bom.md#1-material) |
+| 9 | Module | `_modules` | BOM-узел: childModuleIds + moduleMaterials + moduleWorks. self-contained (может быть standalone) | [`04-bom.md §2`](schemas/04-bom.md#2-module) |
+| 10 | WorkType | `_workTypes` | Справочник видов работ: name + hourlyRate. Используется в ModuleWork. | [`04-bom.md §3`](schemas/04-bom.md#3-worktype) |
+| 11 | Employee | `_employees` | Справочник сотрудников для будущего Gantt (Phase X.2). name, fullName, phone, email?, active | [`04-bom.md §4`](schemas/04-bom.md#4-employee) |
 
 ## 4. Этапы реализации
 
@@ -91,6 +96,7 @@
 
 | Версия | Дата | Что |
 |---|---|---|
+| 1.3 | 2026-07-04 | **BOM domain (PSL-012).** +4 сущности (Material, Module, WorkType, Employee). Иерархия Product → Module → (Material \| Work \| Module). См. [`schemas/04-bom.md`](schemas/04-bom.md). |
 | 1.2 | 2026-07-04 | **Frontend boundary.** ImportJob помечен как «не consume'ится frontend'ом этого репозитория, UI в admin-app». Stage 4 Wave 3.B уточнён — backend done, потребитель вынесен. См. PSL-010. |
 | 1.1 | 2026-07-01 | **DOMAIN-MODEL split**: 444-строчный монолит разделён на 3 файла по тематике (core-users, business-domain, storage-and-import) + этот INDEX. Каждый schema-файл ≤ 200 строк, INDEX ≤ 80. Hard-limit (>400 стр) разрешён. Готов к Stage 3 Моделировщик. |
 | 1.0 | 2026-07-01 | Начальная модель (7 сущностей, schema sketches, indexes, rules — все в одном файле). |

@@ -11,6 +11,10 @@ import { ProductsModule } from './modules/products/products.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { IngestionModule } from './modules/ingestion/ingestion.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { MaterialsModule } from './modules/materials/materials.module';
+import { ModulesModule } from './modules/modules/modules.module';
+import { WorkTypesModule } from './modules/work-types/work-types.module';
+import { EmployeesModule } from './modules/employees/employees.module';
 import { AdminSeedService } from './bootstrap/admin-seed';
 
 /**
@@ -63,6 +67,12 @@ import { AdminSeedService } from './bootstrap/admin-seed';
 
     // Stage 4.B — Admin Area.
     AuthModule,
+
+    // BOM domain (PSL-012) — Materials, Modules, WorkTypes, Employees.
+    MaterialsModule,
+    ModulesModule,
+    WorkTypesModule,
+    EmployeesModule,
   ],
   providers: [AdminSeedService],
 })

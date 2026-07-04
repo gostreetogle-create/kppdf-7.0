@@ -97,12 +97,35 @@ kppdf-7.0/
             │   ├── organizations.module.ts
             │   ├── organizations.controller.ts
             │   ├── organizations.service.ts
-            │   └── schemas/organization.schema.ts
-            ├── products/       ← Product CRUD + COPY + duplicate-protection
-            │   ├── products.module.ts
-            │   ├── products.controller.ts
-            │   ├── products.service.ts
-            │   └── schemas/product.schema.ts
+            │   └── schemas/organization.schema.ts            ├── products/       ← Product CRUD + COPY + duplicate-protection
+                │   ├── products.module.ts
+                │   ├── products.controller.ts
+                │   ├── products.service.ts
+                │   └── schemas/product.schema.ts
+            ├── materials/      ← BOM: Material CRUD (с supplier → Organization)
+                │   ├── materials.module.ts
+                │   ├── materials.controller.ts
+                │   ├── materials.service.ts
+                │   ├── schemas/material.schema.ts
+                │   └── dto/
+            ├── modules/        ← BOM: Module CRUD (childModuleIds + moduleMaterials + moduleWorks, computeCost)
+                │   ├── modules.module.ts
+                │   ├── modules.controller.ts
+                │   ├── modules.service.ts
+                │   ├── schemas/module.schema.ts
+                │   └── dto/
+            ├── work-types/     ← BOM: WorkType (вид работ) CRUD
+                │   ├── work-types.module.ts
+                │   ├── work-types.controller.ts
+                │   ├── work-types.service.ts
+                │   ├── schemas/work-type.schema.ts
+                │   └── dto/
+            ├── employees/      ← BOM: Employee CRUD (для будущего Gantt — Phase X.2)
+                │   ├── employees.module.ts
+                │   ├── employees.controller.ts
+                │   ├── employees.service.ts
+                │   ├── schemas/employee.schema.ts
+                │   └── dto/
             ├── storage/        ← Photo upload (local disk MVP)
             │   ├── storage.module.ts
             │   ├── storage.controller.ts
@@ -263,5 +286,6 @@ Roles имеют **массив permission keys** (не вложенные до�
 
 | Версия | Дата | Что |
 |---|---|---|
+| 1.2 | 2026-07-04 | **BOM domain (PSL-012).** §2 структура папок дополнена 4 модулями: `materials/`, `modules/`, `work-types/`, `employees/`. См. [`schemas/04-bom.md`](schemas/04-bom.md). |
 | 1.1 | 2026-07-04 | **Frontend boundary.** §0 получил плашку: backend обслуживает 2 потребителя — `frontend/` (без импорта) и будущее `admin-app` (с импортом). RBAC-ключи `IMPORTS_*` и endpoint-ы `/api/imports/*` остаются нетронутыми. См. PSL-010. |
 | 1.0 | 2026-07-01 | Начальная архитектура. NestJS + Mongoose + BullMQ + Local disk. Module structure, naming convention, bootstrap flow, MongoDB риски. |

@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsEnum,
   IsMongoId,
   IsNumber,
   IsOptional,
@@ -10,6 +11,7 @@ import {
   MinLength,
   ArrayNotEmpty,
 } from 'class-validator';
+import { ProductStatus } from '../schemas/product.schema';
 
 export class CreateProductDto {
   @IsString()
@@ -54,6 +56,17 @@ export class CreateProductDto {
   @ArrayNotEmpty({ message: 'У товара должно быть минимум 1 фото (BR-PRD-4)' })
   @IsMongoId({ each: true })
   photoIds!: string[];
+
+  // PSL-012: lifecycle status. Default DRAFT if omitted.
+  @IsOptional()
+  @IsEnum(ProductStatus)
+  status?: ProductStatus;
+
+  // PSL-012: BOM-modules, из которых состоит товар.
+  @IsOptional()
+  @IsArray()
+  @IsMongoId({ each: true })
+  productModuleIds?: string[];
 }
 
 export class UpdateProductDto {
@@ -102,4 +115,13 @@ export class UpdateProductDto {
   @ArrayNotEmpty({ message: 'У товара должно быть минимум 1 фото (BR-PRD-4)' })
   @IsMongoId({ each: true })
   photoIds?: string[];
+
+  @IsOptional()
+  @IsEnum(ProductStatus)
+  status?: ProductStatus;
+
+  @IsOptional()
+  @IsArray()
+  @IsMongoId({ each: true })
+  productModuleIds?: string[];
 }

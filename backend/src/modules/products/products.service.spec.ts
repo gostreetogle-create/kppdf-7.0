@@ -4,6 +4,8 @@ import { getModelToken } from '@nestjs/mongoose';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { Product } from './schemas/product.schema';
+import { BomModule } from '../modules/schemas/module.schema';
+import { ModulesService } from '../modules/modules.service';
 
 /** Create a mock Mongoose model: callable constructor + static Query-like methods. */
 function mockModel(defaultData?: Record<string, any>) {
@@ -23,6 +25,7 @@ function mockModel(defaultData?: Record<string, any>) {
 describe('ProductsService', () => {
   let service: ProductsService;
   let mockProductModel: ReturnType<typeof mockModel>;
+  let mockModulesService: { computeCost: ReturnType<typeof vi.fn> };
 
   const validObjectId = 'aaaaaaaaaaaaaaaaaaaaaaaa';
   const validObjectId2 = 'bbbbbbbbbbbbbbbbbbbbbbbb';
@@ -39,10 +42,17 @@ describe('ProductsService', () => {
     mockProductModel.findById = vi.fn().mockReturnValue({ exec: vi.fn().mockResolvedValue(mockProduct) });
     mockProductModel.find     = vi.fn().mockReturnValue({ exec: vi.fn().mockResolvedValue([mockProduct]) });
 
+    // Real class token ModulesService stub — every test gets a fresh one via beforeEach.
+    // computeCost is no-op-by-default; the 2 computeProductCost tests override resolved values.
+    mockModulesService = { computeCost: vi.fn() };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ProductsService,
         { provide: getModelToken(Product.name), useValue: mockProductModel },
+        // BOM-domain: ProductsService injects BomModuleModel + ModulesService for computeProductCost.
+        { provide: getModelToken(BomModule.name), useValue: mockModel() },
+        { provide: ModulesService, useValue: mockModulesService },
       ],
     }).compile();
     service = module.get<ProductsService>(ProductsService);
@@ -137,6 +147,67 @@ describe('ProductsService', () => {
     it('should throw 404 if already deleted', async () => {
       mockProductModel.findById = vi.fn().mockReturnValue({ exec: vi.fn().mockResolvedValue({ ...mockProduct, deletedAt: new Date() }) });
       await expect(service.remove('prod-1')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  /**
+   * BR-PRD-10 + PSL-012: ProductsService.computeProductCost() walks the linked
+   * productModuleIds[] and sums each active module's totalCost by delegating
+   * to ModulesService.computeCost(). The deep recursion coverage lives in the
+   * modules.service.spec.ts (separate file) — these tests verify
+   * orchestration + Σ aggregation.
+   */
+  describe('computeProductCost', () => {
+    it('should return totalCost=0 when productModuleIds is empty', async () => {
+      mockProductModel.findOne = vi.fn().mockReturnValue({
+        exec: vi.fn().mockResolvedValue({ ...mockProduct, productModuleIds: [] }),
+      });
+      const result = await service.computeProductCost('prod-1');
+      expect(result.totalCost).toBe(0);
+      expect(result.modules).toEqual([]);
+    });
+
+    it('should sum active modules totalCost and list each module name', async () => {
+      mockProductModel.findOne = vi.fn().mockReturnValue({
+        exec: vi.fn().mockResolvedValue({
+          ...mockProduct,
+          productModuleIds: [validObjectId, validObjectId2],
+        }),
+      });
+      const moduleModelStub = mockModel();
+      moduleModelStub.find = vi.fn().mockReturnValue({
+        exec: vi.fn().mockResolvedValue([
+          { _id: validObjectId, name: 'Модуль A', deletedAt: null },
+          { _id: validObjectId2, name: 'Модуль B', deletedAt: null },
+        ]),
+      });
+      // Swap the BomModuleModel stub mid-test (beforeEach's stub is still in module).
+      // Use Test.createTestingModule rebuilding pattern is NOT needed —
+      // we just override the global token for this test:
+      const moduleOverride: TestingModule = await Test.createTestingModule({
+        providers: [
+          ProductsService,
+          { provide: getModelToken(Product.name), useValue: {
+            ...mockProductModel,
+            findOne: vi.fn().mockReturnValue({ exec: vi.fn().mockResolvedValue({
+              ...mockProduct, productModuleIds: [validObjectId, validObjectId2],
+            }) }),
+          } },
+          { provide: getModelToken(BomModule.name), useValue: moduleModelStub },
+          { provide: ModulesService, useValue: {
+            computeCost: vi.fn()
+              .mockResolvedValueOnce({ materialsCost: 100, worksCost: 200, childModulesCost: 0, totalCost: 300, breakdown: [] })
+              .mockResolvedValueOnce({ materialsCost: 50, worksCost: 80, childModulesCost: 0, totalCost: 130, breakdown: [] }),
+          } },
+        ],
+      }).compile();
+      const svc = moduleOverride.get<ProductsService>(ProductsService);
+      const result = await svc.computeProductCost('prod-1');
+      expect(result.totalCost).toBe(430);
+      expect(result.modules).toEqual([
+        { moduleId: validObjectId, name: 'Модуль A', cost: 300 },
+        { moduleId: validObjectId2, name: 'Модуль B', cost: 130 },
+      ]);
     });
   });
 });

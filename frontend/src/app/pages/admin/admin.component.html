@@ -348,6 +348,14 @@
         <div class="alert alert-error alert-sm">{{ msg }}</div>
       }
 
+      <!-- Product status error from quick-toggle (BR-PRD-5) -->
+      @if (getStreamError('productStatus'); as msg) {
+        <div class="alert alert-error alert-sm">{{ msg }}</div>
+      }
+      @if (getStreamError('productModules'); as msg) {
+        <div class="alert alert-error alert-sm">{{ msg }}</div>
+      }
+
       <!-- Products Table -->
       <div class="users-table">
         <table>
@@ -355,6 +363,8 @@
             <tr>
               <th>Название</th>
               <th>SKU</th>
+              <th>Статус</th>
+              <th>Модули</th>
               <th>Цена</th>
               <th>Себест.</th>
               <th>Фото</th>
@@ -367,6 +377,36 @@
               <tr [class.row-deleted]="product.deletedAt">
                 <td>{{ product.name }}</td>
                 <td class="td-mono">{{ product.sku }}</td>
+                <td>
+                  @if (auth.hasPermission('PRODUCTS_WRITE')) {
+                    <select
+                      class="status-select"
+                      [value]="translateProductStatus(product.status ?? 'DRAFT')"
+                      (change)="changeProductStatus(product, $any($event.target).value)"
+                    >
+                      @for (s of PRODUCT_STATUSES; track s) {
+                        <option [value]="s">{{ PRODUCT_STATUS_LABELS[s] }}</option>
+                      }
+                    </select>
+                  } @else {
+                    <span class="badge badge-role">{{ translateProductStatus(product.status) }}</span>
+                  }
+                </td>
+                <td>
+                  <div class="module-chips">
+                    @for (mid of product.productModuleIds ?? []; track mid) {
+                      <span class="chip">
+                        {{ getModuleName(mid) }}
+                        @if (auth.hasPermission('PRODUCTS_WRITE')) {
+                          <button type="button" class="chip-x" title="Отвязать модуль" (click)="removeModuleFromProduct(product, mid)">✕</button>
+                        }
+                      </span>
+                    }
+                    @if ((product.productModuleIds ?? []).length === 0) {
+                      <span class="chip chip-empty">—</span>
+                    }
+                  </div>
+                </td>
                 <td class="td-mono">{{ product.price }}</td>
                 <td class="td-mono">{{ product.cost }}</td>
                 <td class="td-mono">{{ product.photoIds?.length ?? 0 }}</td>
@@ -383,7 +423,7 @@
               </tr>
             }
             @if (products().length === 0) {
-              <tr><td colspan="7" class="empty-row">Нет товаров</td></tr>
+              <tr><td colspan="9" class="empty-row">Нет товаров</td></tr>
             }
           </tbody>
         </table>
@@ -658,6 +698,464 @@
             }
             @if (organizations().length === 0) {
               <tr><td colspan="7" class="empty-row">Нет организаций</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <!-- ═══ MATERIALS TAB ═══ (PSL-012 BOM domain) -->
+
+      <!-- loadMaterials error at top of tab -->
+      @if (getStreamError('loadMaterials'); as msg) {
+        <div class="alert alert-error">{{ msg }}</div>
+      }
+
+      <section class="section-header">
+        <h2>Материалы</h2>
+        @if (auth.hasPermission('MATERIALS_WRITE')) {
+          <button class="btn btn-sm btn-primary" (click)="openNewMaterial()">
+            ＋ Новый материал
+          </button>
+        }
+      </section>
+
+      <!-- Material Form -->
+      @if (showMaterialForm() && auth.hasPermission('MATERIALS_WRITE')) {
+        <div class="card form-card">
+          <h3>{{ editingMaterial() ? 'Редактировать материал' : 'Новый материал' }}</h3>
+          @if (getStreamError('saveMaterial'); as msg) {
+            <div class="alert alert-error">{{ msg }}</div>
+          }
+          <form [formGroup]="materialForm" (ngSubmit)="saveMaterial()" class="inline-form">
+            <div class="form-row">
+              <div class="field">
+                <label>Название</label>
+                <input formControlName="name" placeholder="Труба профильная 40×40×6" />
+              </div>
+              <div class="field">
+                <label>SKU (MAT-…)</label>
+                <input formControlName="sku" placeholder="MAT-SQUARE-40-6" class="input-mono" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="field">
+                <label>Поставщик (BR-MAT-1)</label>
+                <select formControlName="supplierId">
+                  <option value="">— Выберите поставщика —</option>
+                  @for (sup of suppliers(); track sup._id) {
+                    <option [value]="sup._id">{{ sup.name }}</option>
+                  }
+                </select>
+              </div>
+              <div class="field">
+                <label>Единица (BR-MAT-2)</label>
+                <select formControlName="unit">
+                  @for (u of ['mm','cm','m','kg','g','pcs']; track u) {
+                    <option [value]="u">{{ MATERIAL_UNIT_LABELS[u] || u }}</option>
+                  }
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="field">
+                <label>Цена за единицу</label>
+                <input formControlName="pricePerUnit" type="number" min="0" step="0.01" />
+              </div>
+              <div class="field">
+                <label>Валюта</label>
+                <input formControlName="priceCurrency" class="input-mono" maxlength="8" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="field">
+                <label>Категория</label>
+                <input formControlName="category" placeholder="Трубы / Уголки / Листы" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="field field-wide">
+                <label>Заметки</label>
+                <textarea formControlName="notes" rows="2" placeholder="Опционально…"></textarea>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary btn-sm" [disabled]="materialForm.invalid">
+                {{ editingMaterial() ? 'Сохранить' : 'Создать' }}
+              </button>
+              <button type="button" class="btn btn-ghost btn-sm" (click)="showMaterialForm.set(false)">
+                Отмена
+              </button>
+            </div>
+          </form>
+        </div>
+      }
+
+      @if (getStreamError('deleteMaterial'); as msg) {
+        <div class="alert alert-error alert-sm">{{ msg }}</div>
+      }
+
+      <!-- Materials Table -->
+      <div class="users-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Название</th>
+              <th>SKU</th>
+              <th>Поставщик</th>
+              <th>Ед.</th>
+              <th>Цена/ед.</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (mat of materials(); track mat._id) {
+              <tr [class.row-deleted]="mat.deletedAt">
+                <td>{{ mat.name }}</td>
+                <td class="td-mono">{{ mat.sku }}</td>
+                <td>{{ getSupplierName(mat.supplierId) }}</td>
+                <td>{{ MATERIAL_UNIT_LABELS[mat.unit] || mat.unit }}</td>
+                <td class="td-mono">{{ mat.pricePerUnit }}</td>
+                <td class="td-actions">
+                  @if (auth.hasPermission('MATERIALS_WRITE')) {
+                    <button class="btn-icon" title="Редактировать" (click)="editMaterial(mat)">✎</button>
+                  }
+                  @if (auth.hasPermission('MATERIALS_DELETE')) {
+                    <button class="btn-icon btn-icon-danger" title="Удалить" (click)="deleteMaterial(mat)">✕</button>
+                  }
+                </td>
+              </tr>
+            }
+            @if (materials().length === 0) {
+              <tr><td colspan="6" class="empty-row">Нет материалов</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <!-- ═══ MODULES TAB ═══ (BOM nodes) -->
+
+      @if (getStreamError('loadModules'); as msg) {
+        <div class="alert alert-error">{{ msg }}</div>
+      }
+
+      <section class="section-header">
+        <h2>Модули (BOM)</h2>
+        @if (auth.hasPermission('MODULES_WRITE')) {
+          <button class="btn btn-sm btn-primary" (click)="openNewModule()">
+            ＋ Новый модуль
+          </button>
+        }
+      </section>
+
+      <!-- Module Form -->
+      @if (showModuleForm() && auth.hasPermission('MODULES_WRITE')) {
+        <div class="card form-card form-card-wide">
+          <h3>{{ editingModule() ? 'Редактировать модуль' : 'Новый модуль' }}</h3>
+          @if (getStreamError('saveModule'); as msg) {
+            <div class="alert alert-error">{{ msg }}</div>
+          }
+          <form [formGroup]="moduleForm" (ngSubmit)="saveModule()" class="inline-form">
+            <div class="form-row">
+              <div class="field">
+                <label>Название</label>
+                <input formControlName="name" placeholder="Каркас стеллажа" />
+              </div>
+              <div class="field">
+                <label>SKU (BR-MOD-3)</label>
+                <input formControlName="sku" placeholder="MOD-RACK-FRAME" class="input-mono" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="field">
+                <label>Категория</label>
+                <input formControlName="category" placeholder="Каркасы / Полки / Двери" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="field field-wide">
+                <label>Заметки</label>
+                <textarea formControlName="notes" rows="2"></textarea>
+              </div>
+            </div>
+
+            <!-- Materials used in this module -->
+            <fieldset class="legal-block">
+              <legend>Материалы ({{ moduleMaterials().length }})</legend>
+              @for (mm of moduleMaterials(); track $index; let i = $index) {
+                <div class="form-row">
+                  <div class="field">
+                    <label>Материал</label>
+                    <select [value]="mm.materialId" disabled>
+                      <option [value]="mm.materialId">{{ getMaterialName(mm.materialId) }}</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>Количество</label>
+                    <input type="number" min="0.001" step="0.001" [value]="mm.qty" disabled />
+                  </div>
+                  <button type="button" class="btn-icon btn-icon-danger btn-icon-contact-remove" title="Убрать материал" (click)="removeMaterialFromModule(i)">✕</button>
+                </div>
+              }
+              <button type="button" class="btn btn-ghost btn-sm" (click)="addMaterialToModule()" [disabled]="materials().length === 0">
+                ＋ Добавить материал
+              </button>
+              @if (materials().length === 0) {
+                <div class="alert alert-sm" style="margin-top: 0.5rem;">Сначала создайте материал (вкладка «Материалы»).</div>
+              }
+            </fieldset>
+
+            <!-- Works used in this module -->
+            <fieldset class="legal-block">
+              <legend>Работы ({{ moduleWorks().length }})</legend>
+              @for (mw of moduleWorks(); track $index; let i = $index) {
+                <div class="form-row">
+                  <div class="field">
+                    <label>Вид работы</label>
+                    <select [value]="mw.workTypeId" disabled>
+                      <option [value]="mw.workTypeId">{{ getWorkTypeName(mw.workTypeId) }}</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>Часы</label>
+                    <input type="number" min="0.01" step="0.01" [value]="mw.hours" disabled />
+                  </div>
+                  <button type="button" class="btn-icon btn-icon-danger btn-icon-contact-remove" title="Убрать работу" (click)="removeWorkFromModule(i)">✕</button>
+                </div>
+              }
+              <button type="button" class="btn btn-ghost btn-sm" (click)="addWorkToModule()" [disabled]="workTypes().length === 0">
+                ＋ Добавить работу
+              </button>
+              @if (workTypes().length === 0) {
+                <div class="alert alert-sm" style="margin-top: 0.5rem;">Сначала создайте вид работ (вкладка «Виды работ»).</div>
+              }
+            </fieldset>
+
+            <!-- Live compute-cost button (BR-MOD-8) -->
+            <fieldset class="legal-block">
+              <legend>Себестоимость (live, BR-MOD-8)</legend>
+              @if (computeModuleCostResult(); as cost) {
+                <div class="bom-cost-summary">
+                  <div><span>Материалы:</span> <strong class="td-mono">{{ cost.materialsCost }}</strong></div>
+                  <div><span>Работы:</span> <strong class="td-mono">{{ cost.worksCost }}</strong></div>
+                  <div><span>Подмодули:</span> <strong class="td-mono">{{ cost.childModulesCost }}</strong></div>
+                  <div class="total"><span>Итого:</span> <strong class="td-mono">{{ cost.totalCost }}</strong></div>
+                </div>
+              } @else {
+                <div class="photo-empty">Сохраните модуль и откройте его для повтора расчёта.</div>
+              }
+            </fieldset>
+
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary btn-sm" [disabled]="moduleForm.invalid">
+                {{ editingModule() ? 'Сохранить' : 'Создать' }}
+              </button>
+              <button type="button" class="btn btn-ghost btn-sm" (click)="showModuleForm.set(false)">
+                Отмена
+              </button>
+            </div>
+          </form>
+        </div>
+      }
+
+      @if (getStreamError('deleteModule'); as msg) {
+        <div class="alert alert-error alert-sm">{{ msg }}</div>
+      }
+
+      <!-- Modules Table -->
+      <div class="users-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Название</th>
+              <th>SKU</th>
+              <th>Материалы</th>
+              <th>Работы</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (m of modules(); track m._id) {
+              <tr [class.row-deleted]="m.deletedAt">
+                <td>{{ m.name }}</td>
+                <td class="td-mono">{{ m.sku }}</td>
+                <td class="td-mono">{{ m.moduleMaterials?.length ?? 0 }}</td>
+                <td class="td-mono">{{ m.moduleWorks?.length ?? 0 }}</td>
+                <td class="td-actions">
+                  @if (auth.hasPermission('MODULES_WRITE')) {
+                    <button class="btn-icon" title="Редактировать" (click)="editModule(m)">✎</button>
+                  }
+                  @if (auth.hasPermission('MODULES_DELETE')) {
+                    <button class="btn-icon btn-icon-danger" title="Удалить" (click)="deleteModule(m)">✕</button>
+                  }
+                </td>
+              </tr>
+            }
+            @if (modules().length === 0) {
+              <tr><td colspan="5" class="empty-row">Нет модулей</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <!-- ═══ WORK TYPES TAB ═══ -->
+
+      @if (getStreamError('loadWorkTypes'); as msg) {
+        <div class="alert alert-error">{{ msg }}</div>
+      }
+
+      <section class="section-header">
+        <h2>Виды работ</h2>
+        @if (auth.hasPermission('WORKTYPES_WRITE')) {
+          <button class="btn btn-sm btn-primary" (click)="openNewWorkType()">
+            ＋ Новый вид работ
+          </button>
+        }
+      </section>
+
+      @if (showWorkTypeForm() && auth.hasPermission('WORKTYPES_WRITE')) {
+        <div class="card form-card">
+          <h3>{{ editingWorkType() ? 'Редактировать вид работ' : 'Новый вид работ' }}</h3>
+          @if (getStreamError('saveWorkType'); as msg) {
+            <div class="alert alert-error">{{ msg }}</div>
+          }
+          <form [formGroup]="workTypeForm" (ngSubmit)="saveWorkType()" class="inline-form">
+            <div class="form-row">
+              <div class="field">
+                <label>Название</label>
+                <input formControlName="name" placeholder="Сварка / Покраска / Сборка" />
+              </div>
+              <div class="field">
+                <label>Ставка ₽/час</label>
+                <input formControlName="hourlyRate" type="number" min="0" step="0.01" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="field field-wide">
+                <label>Описание</label>
+                <textarea formControlName="description" rows="2"></textarea>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary btn-sm" [disabled]="workTypeForm.invalid">
+                {{ editingWorkType() ? 'Сохранить' : 'Создать' }}
+              </button>
+              <button type="button" class="btn btn-ghost btn-sm" (click)="showWorkTypeForm.set(false)">Отмена</button>
+            </div>
+          </form>
+        </div>
+      }
+
+      @if (getStreamError('deleteWorkType'); as msg) {
+        <div class="alert alert-error alert-sm">{{ msg }}</div>
+      }
+
+      <div class="users-table">
+        <table>
+          <thead><tr><th>Название</th><th>Ставка ₽/час</th><th>Описание</th><th>Действия</th></tr></thead>
+          <tbody>
+            @for (w of workTypes(); track w._id) {
+              <tr [class.row-deleted]="w.deletedAt">
+                <td>{{ w.name }}</td>
+                <td class="td-mono">{{ w.hourlyRate }}</td>
+                <td>{{ w.description || '—' }}</td>
+                <td class="td-actions">
+                  @if (auth.hasPermission('WORKTYPES_WRITE')) {
+                    <button class="btn-icon" (click)="editWorkType(w)">✎</button>
+                  }
+                  @if (auth.hasPermission('WORKTYPES_DELETE')) {
+                    <button class="btn-icon btn-icon-danger" (click)="deleteWorkType(w)">✕</button>
+                  }
+                </td>
+              </tr>
+            }
+            @if (workTypes().length === 0) {
+              <tr><td colspan="4" class="empty-row">Нет видов работ</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <!-- ═══ EMPLOYEES TAB ═══ -->
+
+      @if (getStreamError('loadEmployees'); as msg) {
+        <div class="alert alert-error">{{ msg }}</div>
+      }
+
+      <section class="section-header">
+        <h2>Сотрудники</h2>
+        @if (auth.hasPermission('EMPLOYEES_WRITE')) {
+          <button class="btn btn-sm btn-primary" (click)="openNewEmployee()">
+            ＋ Новый сотрудник
+          </button>
+        }
+      </section>
+
+      @if (showEmployeeForm() && auth.hasPermission('EMPLOYEES_WRITE')) {
+        <div class="card form-card">
+          <h3>{{ editingEmployee() ? 'Редактировать сотрудника' : 'Новый сотрудник' }}</h3>
+          @if (getStreamError('saveEmployee'); as msg) {
+            <div class="alert alert-error">{{ msg }}</div>
+          }
+          <form [formGroup]="employeeForm" (ngSubmit)="saveEmployee()" class="inline-form">
+            <div class="form-row">
+              <div class="field">
+                <label>Фамилия И.О.</label>
+                <input formControlName="name" placeholder="Иванов И.И." />
+              </div>
+              <div class="field">
+                <label>Полное имя</label>
+                <input formControlName="fullName" placeholder="Иванов Иван Иванович" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="field">
+                <label>Телефон</label>
+                <input formControlName="phone" placeholder="+7 (999) 123-45-67" />
+              </div>
+              <div class="field">
+                <label>Email</label>
+                <input formControlName="email" type="email" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="field">
+                <label>
+                  <input type="checkbox" formControlName="active" /> Активен
+                </label>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary btn-sm" [disabled]="employeeForm.invalid">
+                {{ editingEmployee() ? 'Сохранить' : 'Создать' }}
+              </button>
+              <button type="button" class="btn btn-ghost btn-sm" (click)="showEmployeeForm.set(false)">Отмена</button>
+            </div>
+          </form>
+        </div>
+      }
+
+      @if (getStreamError('deleteEmployee'); as msg) {
+        <div class="alert alert-error alert-sm">{{ msg }}</div>
+      }
+
+      <div class="users-table">
+        <table>
+          <thead><tr><th>Фамилия И.О.</th><th>Телефон</th><th>Email</th><th>Активен</th><th>Действия</th></tr></thead>
+          <tbody>
+            @for (emp of employees(); track emp._id) {
+              <tr [class.row-deleted]="emp.deletedAt">
+                <td>{{ emp.name }}</td>
+                <td>{{ emp.phone || '—' }}</td>
+                <td>{{ emp.email || '—' }}</td>
+                <td>{{ emp.active === false ? 'нет' : 'да' }}</td>
+                <td class="td-actions">
+                  @if (auth.hasPermission('EMPLOYEES_WRITE')) {
+                    <button class="btn-icon" (click)="editEmployee(emp)">✎</button>
+                  }
+                  @if (auth.hasPermission('EMPLOYEES_DELETE')) {
+                    <button class="btn-icon btn-icon-danger" (click)="deleteEmployee(emp)">✕</button>
+                  }
+                </td>
+              </tr>
+            }
+            @if (employees().length === 0) {
+              <tr><td colspan="5" class="empty-row">Нет сотрудников</td></tr>
             }
           </tbody>
         </table>

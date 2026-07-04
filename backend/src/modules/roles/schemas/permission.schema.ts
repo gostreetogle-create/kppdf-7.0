@@ -7,6 +7,11 @@ export enum PermissionSection {
   PRODUCTS = 'PRODUCTS',
   ROLES = 'ROLES',
   IMPORTS = 'IMPORTS',
+  // BOM domain (PSL-012)
+  MATERIALS = 'MATERIALS',
+  MODULES = 'MODULES',
+  WORKTYPES = 'WORKTYPES',
+  EMPLOYEES = 'EMPLOYEES',
 }
 
 export enum PermissionAction {

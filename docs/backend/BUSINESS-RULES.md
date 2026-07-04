@@ -210,6 +210,90 @@
 | GAP-004 | BR-ORG-2 | Discriminator / conditional schema для legalType — deferred до Stage 6 | 📋 Deferred |
 | GAP-005 | BR-PHO-3/4/5 | Photo cluster creation + cascade delete — весь Stage 4.D | 📋 Deferred |
 | GAP-006 | BR-IMP-\* | ~~Ingestion worker — весь Stage 4.E~~ ✅ **Resolved** (см. PSL-009). Контракт жив на backend; UI — в отдельном admin-app (см. PSL-010) | ✅ Done (backend), 📋 Deferred (UI) |
+| GAP-007 | BR-MOD-2 | UI рисования вложенных модулей (3+ уровня) — deferred до Phase X.3 | 📋 Deferred |
+| GAP-008 | BR-EMP-assign | Work→Employee assignment + Gantt — deferred до Phase X.2 (Order + Gantt) | 📋 Deferred |
+| GAP-009 | BR-MAT-stock | Multi-warehouse stock tracking — deferred до Phase X.1 | 📋 Deferred |
+
+---
+
+## 7. Material (`_materials`) — BOM каталог
+
+См. [`schemas/04-bom.md §1`](schemas/04-bom.md#1-material) для полной схемы.
+
+### Правило BR-MAT-1: `supplierId` обязателен
+- **[✅]** Schema: `required: true`, Mongoose validation.
+- DTO: `@IsMongoId() @IsNotEmpty()`.
+
+### Правило BR-MAT-2: `unit` обязателен
+- **[✅]** Schema: `required: true`, enum `mm | cm | m | kg | g | pcs`.
+
+### Правило BR-MAT-3: `sku` формат
+- **[✅]** Schema: `unique: true` index. DTO: `@Matches(/^MAT-[A-Z0-9-]+$/) @MinLength(8) @MaxLength(50)`.
+
+### Правило BR-MAT-4: `fixedDimensions.*` true → `dimensions.*` обязан быть задан
+- **[✅]** Валидация в DTO + service при сохранении. Cross-field check: `if (fixedDimensions.length && !dimensions.length) throw BadRequestException`.
+
+### Правило BR-MAT-5: soft-delete
+- **[✅]** Schema `deletedAt: Date | null` + query filter `deletedAt: null`.
+
+---
+
+## 8. Module (`_modules`) — узел BOM
+
+См. [`schemas/04-bom.md §2`](schemas/04-bom.md#2-module) для полной схемы.
+
+### Правило BR-MOD-1: standalone-модуль разрешён
+- **[✅]** Module без `moduleMaterials`, `moduleWorks`, `childModuleIds` — валидный (пустые массивы).
+
+### Правило BR-MOD-2: вложенность
+- **[📋]** UI рисует max 3 уровня вложенности. Backend ограничения нет (теоретически бесконечно). См. GAP-007.
+
+### Правило BR-MOD-3: `sku` формат
+- **[✅]** Schema: `unique: true` index. DTO: `@Matches(/^[A-Z0-9-]+$/) @MinLength(3) @MaxLength(32)` (как Product).
+
+### Правило BR-MOD-4: `moduleMaterials[].qty > 0` + ref существует
+- **[✅]** Schema-level `min: 0.0001`. Service: проверка `Material.findById` на существование.
+
+### Правило BR-MOD-5: `moduleWorks[].hours > 0` + ref WorkType существует
+- **[✅]** Schema `min: 0.01`. Service: проверка `WorkType.findById`. `overrideRate` опционален.
+
+### Правило BR-MOD-6: `childModuleIds` не могут содержать сам модуль (no cycles)
+- **[✅]** Service: при сохранении проверка — `if (childModuleIds.includes(this._id)) throw BadRequestException('cycle')`. Рекурсивная проверка для глубоких циклов deferred.
+
+### Правило BR-MOD-7: soft-delete
+- **[✅]** Schema. Нельзя удалить модуль, на который ссылается `Product.productModuleIds` — BR-PRD-9 deferred (GAP-007).
+
+### Правило BR-MOD-8: `computeCost` API endpoint
+- **[✅]** `POST /api/modules/:id/compute-cost` → `{ materialsCost, worksCost, totalCost, breakdown[] }`. Live, не кэшируется.
+
+---
+
+## 9. WorkType (`_workTypes`) — справочник видов работ
+
+### Правило BR-WT-1: `hourlyRate ≥ 0`
+- **[✅]** Schema `min: 0`. Может быть 0 (учебные/бартер).
+
+### Правило BR-WT-2: нельзя удалить, если есть ссылки
+- **[✅]** Service: при `DELETE /api/work-types/:id` проверка `Module.countDocuments({ 'moduleWorks.workTypeId': id, deletedAt: null })`. Если > 0 → 409 ConflictException с сообщением «WorkType used in N module(s)».
+
+---
+
+## 10. Employee (`_employees`) — справочник сотрудников
+
+### Правило BR-EMP-1: `name` уникален
+- **[✅]** Schema: `unique: true` index. Login-style identifier.
+
+### Правило BR-EMP-2: `phone` обязателен
+- **[✅]** Schema: `required: true`. Без валидации формата (международные номера).
+
+### Правило BR-EMP-3: `email` опционален, но валидируется
+- **[✅]** DTO: `@IsEmail()` если задан. `@IsOptional()`.
+
+### Правило BR-EMP-4: soft-delete + `active: false` для уволенных
+- **[✅]** Schema. UI скрывает `active: false` по умолчанию.
+
+### Правило BR-EMP-5: никакой auth-интеграции
+- **[✅]** Employee — справочник. Логин в систему = `User`. Связь Employee → User отсутствует на MVP.
 
 ---
 
@@ -229,6 +313,7 @@
 
 | Версия | Дата | Что |
 |---|---|---|
+| 2.2 | 2026-07-04 | **BOM domain (PSL-012).** +§7-§10 (Material, Module, WorkType, Employee). BR-MAT-1..5, BR-MOD-1..8, BR-WT-1..2, BR-EMP-1..5. +3 GAP (007/008/009) для deferred-фичей (Gantt/UI/Stock). |
 | 2.1 | 2026-07-04 | **Frontend boundary.** §5 получил плашку со ссылкой на PSL-010 — frontend этого репозитория больше не expose-imports; UI переезжает в admin-app. GAP-006 переформулирован — backend done, UI deferred в другой репозиторий. |
 | 2.0 | 2026-07-02 | Полная валидация аналитиком. Добавлены статусы `[✅]/[📋]/[❌]` для каждого правила. Добавлен §6 GAP-реестр (6 gaps). Исправлены неточности: BR-ORG-2 (discriminator → deferred), BR-ORG-3 (INN regex → gap), BR-PRD-4 (update optional → minor), BR-USR-9 (R1 → gap). |
 | 1.0 | 2026-07-01 | Начальный реестр. 34 правила. |

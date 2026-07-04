@@ -51,10 +51,49 @@ export class ProductsController {
     return this.productsService.copy(id, dto);
   }
 
+  // === BOM (PSL-012) ===
+
+  @Post(':id/modules')
+  @Permissions(PERMISSION_KEYS.PRODUCTS_WRITE)
+  async addModule(
+    @Param('id') id: string,
+    @Body() body: { moduleId: string },
+  ) {
+    return this.productsService.addModule(id, body.moduleId);
+  }
+
+  @Delete(':id/modules/:moduleId')
+  @Permissions(PERMISSION_KEYS.PRODUCTS_WRITE)
+  async removeModule(
+    @Param('id') id: string,
+    @Param('moduleId') moduleId: string,
+  ) {
+    return this.productsService.removeModule(id, moduleId);
+  }
+
+  @Patch(':id/modules/reorder')
+  @Permissions(PERMISSION_KEYS.PRODUCTS_WRITE)
+  async reorderModules(
+    @Param('id') id: string,
+    @Body() body: { moduleIds: string[] },
+  ) {
+    return this.productsService.reorderModules(id, body.moduleIds);
+  }
+
   @Delete(':id')
   @Permissions(PERMISSION_KEYS.PRODUCTS_DELETE)
   async remove(@Param('id') id: string) {
     await this.productsService.remove(id);
     return { message: 'Product deleted successfully' };
+  }
+
+  /**
+   * GET /api/products/:id/compute-cost — BR-PRD-10, Σ(active module totalCost).
+   * Endpoint shape mirrors api.service.ts ComputeProductCostResult.
+   */
+  @Get(':id/compute-cost')
+  @Permissions(PERMISSION_KEYS.PRODUCTS_READ)
+  async computeCost(@Param('id') id: string) {
+    return this.productsService.computeProductCost(id);
   }
 }

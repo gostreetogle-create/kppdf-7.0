@@ -10,6 +10,7 @@ import * as bcrypt from 'bcrypt';
 import { User } from '../modules/users/schemas/user.schema';
 import { Role } from '../modules/roles/schemas/role.schema';
 import { Permission, PermissionAction, PermissionSection } from '../modules/roles/schemas/permission.schema';
+import { WorkType } from '../modules/work-types/schemas/work-type.schema';
 
 /**
  * Seed data: 14 default permissions per RBAC-SCHEME.md §1.
@@ -34,6 +35,28 @@ const PERMISSIONS_SEED: Array<{
   { key: 'PRODUCTS_COPY', section: PermissionSection.PRODUCTS, action: PermissionAction.COPY, description: 'Копирование товара' },
   { key: 'IMPORTS_READ', section: PermissionSection.IMPORTS, action: PermissionAction.READ, description: 'Просмотр статуса импорт-операций' },
   { key: 'IMPORTS_WRITE', section: PermissionSection.IMPORTS, action: PermissionAction.WRITE, description: 'Загрузка Excel/JSON/API для импорта' },
+  // BOM domain (PSL-012)
+  { key: 'MATERIALS_READ', section: PermissionSection.MATERIALS, action: PermissionAction.READ, description: 'Просмотр каталога материалов' },
+  { key: 'MATERIALS_WRITE', section: PermissionSection.MATERIALS, action: PermissionAction.WRITE, description: 'Создание/редактирование материалов' },
+  { key: 'MATERIALS_DELETE', section: PermissionSection.MATERIALS, action: PermissionAction.DELETE, description: 'Удаление материалов' },
+  { key: 'MODULES_READ', section: PermissionSection.MODULES, action: PermissionAction.READ, description: 'Просмотр BOM-модулей' },
+  { key: 'MODULES_WRITE', section: PermissionSection.MODULES, action: PermissionAction.WRITE, description: 'Создание/редактирование BOM-модулей' },
+  { key: 'MODULES_DELETE', section: PermissionSection.MODULES, action: PermissionAction.DELETE, description: 'Удаление BOM-модулей' },
+  { key: 'WORKTYPES_READ', section: PermissionSection.WORKTYPES, action: PermissionAction.READ, description: 'Просмотр видов работ' },
+  { key: 'WORKTYPES_WRITE', section: PermissionSection.WORKTYPES, action: PermissionAction.WRITE, description: 'Создание/редактирование видов работ' },
+  { key: 'WORKTYPES_DELETE', section: PermissionSection.WORKTYPES, action: PermissionAction.DELETE, description: 'Удаление видов работ' },
+  { key: 'EMPLOYEES_READ', section: PermissionSection.EMPLOYEES, action: PermissionAction.READ, description: 'Просмотр сотрудников' },
+  { key: 'EMPLOYEES_WRITE', section: PermissionSection.EMPLOYEES, action: PermissionAction.WRITE, description: 'Создание/редактирование сотрудников' },
+  { key: 'EMPLOYEES_DELETE', section: PermissionSection.EMPLOYEES, action: PermissionAction.DELETE, description: 'Удаление сотрудников' },
+];
+
+/**
+ * Базовые виды работ. Создаются при первом запуске (idempotent).
+ */
+const DEFAULT_WORK_TYPES = [
+  { name: 'Сварка', hourlyRate: 500, description: 'Электродуговая и газовая сварка' },
+  { name: 'Покраска', hourlyRate: 400, description: 'Порошковая и жидкая покраска' },
+  { name: 'Сборка', hourlyRate: 350, description: 'Механическая сборка узлов' },
 ];
 
 /**
@@ -54,23 +77,55 @@ export class AdminSeedService implements OnApplicationBootstrap {
     @InjectModel(User.name) private readonly userModel: Model<User>,
     @InjectModel(Role.name) private readonly roleModel: Model<Role>,
     @InjectModel(Permission.name) private readonly permissionModel: Model<Permission>,
+    @InjectModel(WorkType.name) private readonly workTypeModel: Model<WorkType>,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
     await this.seedPermissions();
     await this.seedRoles();
     await this.seedAdminUser();
+    await this.seedWorkTypes();
+  }
+
+  /**
+   * PSL-012: 3 базовых WorkType (Сварка/Покраска/Сборка) при первом запуске.
+   * Idempotent: если WorkType с таким name уже есть — skip.
+   */
+  private async seedWorkTypes(): Promise<void> {
+    for (const wt of DEFAULT_WORK_TYPES) {
+      await this.workTypeModel.findOneAndUpdate(
+        { name: wt.name },
+        { $setOnInsert: { ...wt, deletedAt: null } },
+        { upsert: true, new: true },
+      ).exec();
+    }
+    this.logger.log(`✅ WorkTypes seeded: ${DEFAULT_WORK_TYPES.map((w) => w.name).join(', ')}`);
   }
 
   private async seedPermissions(): Promise<void> {
-    const count = await this.permissionModel.countDocuments().exec();
-    if (count > 0) {
-      this.logger.log(`✅ ${count} permissions already exist, skipping permission seed`);
-      return;
+    // Additive per-key upsert: Раньше использовался "skip if any exist" - это
+    // блокировало миграции при добавлении новых ключей (например, BOM-domain
+    // PSL-012). Теперь каждый ключ {@link PERMISSIONS_SEED} добавляется
+    // только если отсутствует — идемпотентно и аддитивно.
+    let inserted = 0;
+    let skipped = 0;
+    for (const perm of PERMISSIONS_SEED) {
+      const res = await this.permissionModel
+        .findOneAndUpdate(
+          { key: perm.key },
+          { $setOnInsert: perm },
+          { upsert: true, new: false },
+        )
+        .exec();
+      if (res) {
+        skipped++;
+      } else {
+        inserted++;
+      }
     }
-
-    await this.permissionModel.insertMany(PERMISSIONS_SEED);
-    this.logger.log(`✅ Seeded ${PERMISSIONS_SEED.length} permissions`);
+    this.logger.log(
+      `✅ Permissions upserted: ${inserted} inserted, ${skipped} already existed (total ${PERMISSIONS_SEED.length} defined)`,
+    );
   }
 
   private async seedRoles(): Promise<void> {
