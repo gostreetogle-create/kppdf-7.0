@@ -38,17 +38,11 @@ export const ADMIN_TABS = [
     perm: 'ORGANIZATIONS_READ',
     navGroup: 'catalog',
   },
-  {
-    tab: 'import',
-    label: 'Импорт',
-    perm: 'IMPORTS_READ',
-    navGroup: 'tools',
-  },
 ] as const;
 
 export type AdminTabName = (typeof ADMIN_TABS)[number]['tab'];
 export type AdminPermKey = (typeof ADMIN_TABS)[number]['perm'];
-export type AdminNavGroupId = 'system' | 'catalog' | 'tools';
+export type AdminNavGroupId = 'system' | 'catalog';
 
 /**
  * Shape of a single dropdown nav group (`NAV_GROUPS[i]`). Consumers
@@ -83,10 +77,5 @@ export const NAV_GROUPS: readonly {
     id: 'catalog',
     label: 'Каталог',
     items: ADMIN_TABS.filter((t) => t.navGroup === 'catalog'),
-  },
-  {
-    id: 'tools',
-    label: 'Инструменты',
-    items: ADMIN_TABS.filter((t) => t.navGroup === 'tools'),
   },
 ];

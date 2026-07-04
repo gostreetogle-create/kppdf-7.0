@@ -164,48 +164,6 @@ export interface UpdateOrganizationDto {
   contacts?: OrganizationContact[];
 }
 
-// ─── Import Jobs ───────────────────────────────
-
-export type ImportSourceType = 'EXCEL' | 'JSON' | 'API';
-export type ImportStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
-export type ImportEntityType = 'PRODUCTS' | 'ORGANIZATIONS' | 'USERS';
-
-export interface ImportJobError {
-  rowIndex: number;
-  errorMessage: string;
-  rawData?: Record<string, any>;
-}
-
-export interface ImportJob {
-  _id: string;
-  sourceType: ImportSourceType;
-  entityType: ImportEntityType;
-  sourceFile?: string;
-  sourceUrl?: string;
-  status: ImportStatus;
-  progressPercent: number;
-  totalRecords: number;
-  processedRecords: number;
-  successRecords: number;
-  failedRecords: number;
-  errorLog: ImportJobError[];
-  createdAt: string;
-  updatedAt: string;
-  completedAt?: string;
-}
-
-export interface ImportJobListResponse {
-  jobs: ImportJob[];
-  total: number;
-}
-
-export interface CreateImportResponse {
-  message: string;
-  jobId: string;
-  status: ImportStatus;
-  recordsCount?: number;
-}
-
 // ─── Photos / Storage ─────────────────────────
 /**
  * Photo cluster — mirrors backend `backend/src/modules/storage/schemas/photo.schema.ts`.
@@ -398,75 +356,6 @@ export class ApiService {
 
   deleteOrganization(id: string) {
     return this.http.delete<void>(`${this.baseUrl}/organizations/${id}`);
-  }
-
-  // ═══════════════════════════════════════════
-  // Imports
-  // ═══════════════════════════════════════════
-
-  /**
-   * POST /api/imports/excel — Upload an Excel file for import.
-   * Body: multipart/form-data with field "file" and optional "entityType".
-   */
-  importExcel(entityType: ImportEntityType, file: File) {
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('entityType', entityType);
-    return this.http.post<CreateImportResponse>(
-      `${this.baseUrl}/imports/excel`,
-      fd,
-    );
-  }
-
-  /**
-   * POST /api/imports/json — Submit JSON data for import.
-   */
-  importJson(
-    entityType: ImportEntityType,
-    data: Record<string, any>[],
-    sourceOptions?: Record<string, any>,
-  ) {
-    return this.http.post<CreateImportResponse>(
-      `${this.baseUrl}/imports/json`,
-      { entityType, data, sourceOptions },
-    );
-  }
-
-  /**
-   * GET /api/imports — List import jobs.
-   */
-  getImportJobs(params?: {
-    status?: ImportStatus;
-    entityType?: ImportEntityType;
-    limit?: number;
-    skip?: number;
-  }) {
-    const query = new URLSearchParams();
-    if (params?.status) query.set('status', params.status);
-    if (params?.entityType) query.set('entityType', params.entityType);
-    if (params?.limit) query.set('limit', String(params.limit));
-    if (params?.skip) query.set('skip', String(params.skip));
-    const qs = query.toString();
-    return this.http.get<ImportJobListResponse>(
-      `${this.baseUrl}/imports${qs ? '?' + qs : ''}`,
-    );
-  }
-
-  /**
-   * GET /api/imports/:id — Get a single import job.
-   */
-  getImportJob(id: string) {
-    return this.http.get<ImportJob>(`${this.baseUrl}/imports/${id}`);
-  }
-
-  /**
-   * POST /api/imports/:id/cancel — Cancel a pending/processing import.
-   */
-  cancelImportJob(id: string) {
-    return this.http.post<{ message: string; jobId: string; status: ImportStatus }>(
-      `${this.baseUrl}/imports/${id}/cancel`,
-      {},
-    );
   }
 
   // ═══════════════════════════════════════════

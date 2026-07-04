@@ -7,7 +7,6 @@ import {
   type User,
   type Product,
   type Organization,
-  type ImportJob,
 } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { ADMIN_TABS, type AdminPermKey } from './admin-tabs';
@@ -40,7 +39,6 @@ export type AdminApiSubset = Pick<
   | 'getUsers'
   | 'getProducts'
   | 'getOrganizations'
-  | 'getImportJobs'
 >;
 
 /** Same idea for auth: any object exposing `hasPermission(key): boolean`. */
@@ -62,7 +60,6 @@ export interface LoadHooks {
   onUsersLoaded?: (users: User[]) => void;
   onProductsLoaded?: (products: Product[]) => void;
   onOrganizationsLoaded?: (organizations: Organization[]) => void;
-  onImportJobsLoaded?: (result: { jobs: ImportJob[]; total: number }) => void;
   onStreamError: (key: string, msg: string | null) => void;
 }
 
@@ -158,15 +155,6 @@ export function buildAdminLoadStreams({
         tap((o) => hooks.onOrganizationsLoaded?.(o)),
         catchError(() => {
           report('loadOrganizations', 'Ошибка загрузки организаций');
-          return of(null);
-        }),
-      ),
-    ],
-    IMPORTS_READ: [
-      api.getImportJobs().pipe(
-        tap((r) => hooks.onImportJobsLoaded?.(r)),
-        catchError(() => {
-          report('loadImportJobs', 'Ошибка загрузки задач импорта');
           return of(null);
         }),
       ),
