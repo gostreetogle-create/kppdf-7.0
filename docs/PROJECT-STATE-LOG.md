@@ -44,13 +44,23 @@
 
 ---
 
-## 1. Журнал изменений
+## 1. Журнал изменений> Самые новые записи — сверху. Монотонная нумерация PSL-NNN.
 
-> Самые новые записи — сверху. Монотонная нумерация PSL-NNN.
-
-### PSL-009 — Stage 4.E Ingestion — BullMQ Worker + Excel/JSON/API strategies + ImportJob CRUD [2026-07-02]
+### PSL-010 — Frontend boundary: Import UI вынесен в отдельное admin-app [2026-07-04]
 
 | Поле | Значение |
+|---|---|
+| **Дата** | 2026-07-04 |
+| **ID** | PSL-010 |
+| **Тип** | `structure` (новая граница между двумя Angular workspace'ами) + `terminology` (явное именование «admin-app») |
+| **Модуль** | `Универсально` (frontend этого репозитория + docs/backend/*) |
+| **Автор** | Buffy / MM3 |
+| **Связанные OQ / PSL** | PSL-009 (Ingestion backend done), PSL-007 (Auth/RBAC), docs/backend/CHECKLIST.md §6.1 row 4.E, docs/backend/schemas/03-storage-and-import.md §2, docs/backend/ARCHITECTURE.md §0, docs/backend/DOMAIN-MODEL.md §3 entity #7, docs/backend/BUSINESS-RULES.md §5, все docs v1.1–2.1 |
+| **Описание** | **Граница приложений зафиксирована.** `frontend/` (Angular в этом репозитории) больше НЕ expose-ит Excel/JSON/API import UI. Backend-контракт `POST/GET/DELETE /api/imports/*` сохранён полностью: те же RBAC-ключи `IMPORTS_WRITE` / `IMPORTS_DELETE`, тот же BullMQ worker, те же 3 strategy, тот же ImportJob state-machine.<br><br>**Что сделано в `frontend/`** (в одном chore-коммите):<br>• `api.service.ts` — удалены типы `ImportSourceType/Status/EntityType`, `ImportJob`, `ImportJobError`, `ImportJobListResponse`, `CreateImportResponse` и методы `importExcel` / `importJson` / `getImportJobs` / `getImportJob` / `cancelImportJob`<br>• `admin-tabs.ts` — убрана nav-группа `imports`<br>• `admin-loader.ts` — убран стрим `getImportJobs` + хук `onImportJobsLoaded`<br>• `admin.component.html` — удалён блок `@if (activeTab() === 'import') { … } @else { USERS }`; USERS теперь прямой `@else` от organizations<br>• `admin.component.css` — удалена секция `/* ═══ Import Tab ═══ */`<br>• `admin.component.ts` — убраны `Subscription/interval/switchMap` из rxjs-импортов, удалены все Import-связанные signals/methods/labels и кейс `'import'` в `activeTab()`<br><br>**Backend НЕ тронут.** `backend/src/modules/ingestion/` (controller, service, processor, 3 strategy, schema) остаётся как есть — будет потребляться будущим admin-app.<br><br>**Docs синхронизированы** (этот PSL):<br>• `docs/backend/CHECKLIST.md` v1.1 → 1.2: Stage 5 strip-down, строка 5.6 помечена «вынесено из scope»<br>• `docs/backend/BUSINESS-RULES.md` v2.0 → 2.1: §5 получил плашку про границу; GAP-006 переформулирован<br>• `docs/backend/DOMAIN-MODEL.md` v1.1 → 1.2: entity #7 помечена, Wave 3.B уточнён<br>• `docs/backend/ARCHITECTURE.md` v1.0 → 1.1: §0 описывает 2 потребителей<br>• `docs/backend/schemas/03-storage-and-import.md` v1.0 → 1.1: §2 polling'ит admin-app, не `frontend/`<br><br>**Валидация:** `npx tsc --noEmit -p tsconfig.app.json` exit 0; `npx ng build --configuration=development` exit 0 (после фикса orphan-`}` в каскаде `@if/@else`); `grep` по `'import'` / `IMPORTS_` / `ImportJob` / `getImportJobs` / `importExcel` → 0 матчей в `frontend/`. |
+| **Причина** | PO запросил «убрать из приложения возможность excel импорта/экспорта, frontend оставить более чистым для пользователя, всё что касается работы с backend по импорту делать в отдельном admin-app в будущем». Решение: разделить скоупы → два workspace'а, один общий backend. RBAC-ключи и endpoint-ы сохраняем — admin-app будет их потреблять. |
+| **Затронутые файлы** | 🆕 Создан (0): —<br>📝 Изменены (11):<br>• `frontend/src/app/services/api.service.ts`<br>• `frontend/src/app/pages/admin/admin-tabs.ts`<br>• `frontend/src/app/pages/admin/admin-loader.ts`<br>• `frontend/src/app/pages/admin/admin.component.html`<br>• `frontend/src/app/pages/admin/admin.component.css`<br>• `frontend/src/app/pages/admin/admin.component.ts`<br>• `docs/backend/CHECKLIST.md` (1.1 → 1.2)<br>• `docs/backend/BUSINESS-RULES.md` (2.0 → 2.1)<br>• `docs/backend/DOMAIN-MODEL.md` (1.1 → 1.2)<br>• `docs/backend/ARCHITECTURE.md` (1.0 → 1.1)<br>• `docs/backend/schemas/03-storage-and-import.md` (1.0 → 1.1)<br>• `docs/PROJECT-STATE-LOG.md` (этот entry; 1.4 → 1.5)<br><br>🗑️ Удалено (0): — |
+
+### PSL-009 — Stage 4.E Ingestion — BullMQ Worker + Excel/JSON/API strategies + ImportJob CRUD [2026-07-02] | Поле | Значение |
 |---|---|
 | **Дата** | 2026-07-02 |
 | **ID** | PSL-009 |
@@ -214,6 +224,7 @@
 
 | Версия | Дата | Что |
 |---|---|---|
+| 1.5 | 2026-07-04 | Добавлена запись **PSL-010** — фиксация frontend boundary. `frontend/` больше не expose-ит Import UI (Excel/JSON/API); backend-контракт `POST/GET/DELETE /api/imports/*` сохранён нетронутым для будущего `admin-app` (отдельный Angular workspace). 6 frontend-файлов стрипнуты, 5 docs-файлов синхронизированы (CHECKLIST, BUSINESS-RULES, DOMAIN-MODEL, ARCHITECTURE, schemas/03-storage-and-import). Все коммитятся одним chore-коммитом. |
 | 1.4 | 2026-07-01 | Добавлена запись PSL-005 — единый launcher проекта v1.0 (3 entry points: `./start.sh` / `.\start.ps1` / `npm run launch:*`). 8 фаз bootstrap, 8 subcommands, idempotent, cross-platform (Linux/macOS/Windows Git Bash/Windows PowerShell). Open `.gitignore` расширен для `.run/` (logs + pid files не leak в git). README «Быстрый старт» секция переписана. Code-reviewer verdict: PASS с 2 minor nits (deferred). Включает launcher hint в related docs. |
 | 1.3 | 2026-07-01 | Добавлена PSL-004 (Stage 4 Wave 1 Bootstrap + DOMAIN-MODEL split). |
 | 1.2 | 2026-07-01 | Добавлена PSL-003 (`.gitignore` + defer-decisions). |

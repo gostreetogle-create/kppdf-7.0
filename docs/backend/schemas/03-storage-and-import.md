@@ -135,7 +135,7 @@ ImportJobSchema.index({ createdByUserId: 1, createdAt: -1 });
 
 **Правила (BR-IMP-*):**
 
-- Frontend polling'ит `GET /api/imports/:id` каждые 2 сек для progress.
+- **Polling-контракт:** HTTP-клиент (будущее admin-app, см. PSL-010) polling'ит `GET /api/imports/:id` каждые 2 сек для progress. **Frontend этого репозитория НЕ consume'ит endpoint.**
 - При `FAILED` — `errorLog` нетривиальный (список строк с rawData + errorMessage), чтобы можно было скачать и исправить.
 - При повторном клике "Import again" с тем же файлом → создаётся НОВЫЙ ImportJob (не перезапуск старого).
 - **Worker handler** должен перехватывать validation error от `errorLog` cap (`length > 1000`), делать `errorLog.slice(0, 1000)` + ставить `status = FAILED` без throw.
@@ -158,4 +158,5 @@ Organization ── photoIds[] ──────► Photo
 
 | Версия | Дата | Что |
 |---|---|---|
+| 1.1 | 2026-07-04 | **Frontend boundary.** §2 уточняет: polling делает admin-app (не `frontend/`). Схема не меняется. См. PSL-010. |
 | 1.0 | 2026-07-01 | Извлечено из `DOMAIN-MODEL.md` v1.0 (§6, §7) в отдельный файл. ASCII-диаграмма Photo cluster сохранена. Content unchanged. |

@@ -22,7 +22,7 @@
 | 2 | **Аналитика** | Бизнес-аналитик | Описать правила для всех 7 сущностей, state-машины (только для RBAC role assignment), RBAC matrix для UI | 📋 Ready |
 | 3 | **Моделирование** | Моделировщик | Mongoose-схемы + class-validator DTOs + indexes + soft-delete hooks | 📋 Ready |
 | 4 | **Backend Dev** | Backend Developer | NestJS код: модули Auth/Users/Roles/Organizations/Products/Storage/Ingestion | 📋 Ready (может стартовать) |
-| 5 | **Frontend Dev** | Frontend Developer | Angular код: login, admin RBAC matrix, products CRUD+copy, organizations CRUD | 📋 Ready (параллельно с 4) |
+| 5 | **Frontend Dev** | Frontend Developer | Angular код: login, admin RBAC matrix, products CRUD+copy, organizations CRUD. **Import UI вынесено в отдельное admin-app** (см. PSL-010). | 📋 Ready (параллельно с 4) |
 | 6 | **QA** | QA-валидатор | vitest unit tests + supertest API integration + Playwright E2E | ⏸ После 4+5 |
 | 7 | **Координация** | Координатор | Кросс-модульный отчёт по `AGENT-PROMPTS.md §6` (формат отчёта) | ⏸ После 6 |
 
@@ -169,7 +169,7 @@
 |---|---|
 | **Роль** | Frontend Developer (новый) |
 | **Вход** | `backend/` API contract (после Stage 3 будет OpenAPI spec от NestJS Swagger), [`..\..\frontend\README.md`](../../frontend/README.md) |
-| **Выход** | Angular UI: Login, Admin panel (RBAC), Products CRUD+Copy, Organizations CRUD, Import UI |
+| **Выход** | Angular UI: Login, Admin panel (RBAC), Products CRUD+Copy, Organizations CRUD. **Import UI НЕ входит в скоуп** — бэкенд-контракт остаётся, UI переедет в отдельное admin-app (см. PSL-010). |
 
 ### 7.1 Подзадачи внутри Stage 5 (параллельно)
 
@@ -180,7 +180,7 @@
 | 5.3 | Admin panel: RBAC matrix (rows = roles, cols = sections, cells = checkboxes) | 5.1, 4.4 | Frontend Dev #3 |
 | 5.4 | Products list + form (с multi-photo upload, duplicate-warning, COPY button) | 5.1, 4.6 | Frontend Dev #4 |
 | 5.5 | Organizations list + form (с subtype form fields swap on legalType change) | 5.1, 4.5 | Frontend Dev #5 |
-| 5.6 | Import UI: drag-drop Excel/JSON, progress bar, error log display | 5.1, 4.8 | Frontend Dev #6 |
+| 5.6 | ~~Import UI: drag-drop Excel/JSON, progress bar, error log display~~ — **вынесено из scope**. Endpoint-ы `POST/GET/DELETE /api/imports/*` остаются на бэкенде как есть; UI делается в отдельном admin-app (см. PSL-010). | — | — |
 | 5.7 | Page-level permission guards (route-level блокировка без permission) | 5.3 | Frontend Dev #2 (расширение) |
 
 **Готовность Stage 5:**
@@ -189,7 +189,7 @@
 - ✅ Создание/редактирование товара с фото работает.
 - ✅ COPY кнопка делает копию.
 - ✅ Admin panel создаёт/редактирует роли с галочками.
-- ✅ Drag-drop Excel → progress bar → products обновлены.
+- ✅ **НЕ применимо** — UI работы с импортами (Excel/JSON/API drag-drop → progress bar → products updated) делается в отдельном admin-app (см. PSL-010). В scope `frontend/` этого репозитория больше не входит.
 
 ---
 
@@ -251,5 +251,6 @@
 
 | Версия | Дата | Что |
 |---|---|---|
+| 1.2 | 2026-07-04 | **Frontend boundary — Import UI вынесен в admin-app.** Stage 5 strip-down: убрана подзадача 5.6 (Import UI), убрана строка readiness для drag-drop Excel. Контракт `POST/GET/DELETE /api/imports/*` на backend сохранён без изменений и НЕ удаляется — им будет пользоваться будущее `admin-app` (отдельный Angular workspace). См. PSL-010. |
 | 1.1 | 2026-07-01 | Сгруппированы 10 параллельных подзадач Stage 4 → 5 streams (4.A–4.E) для снижения риска LLM-drift. Уточнено правило сеансов (1 поток = 1 сеанс). Добавлена state-машина Role (DRAFT→ACTIVE→ARCHIVED) в `DOMAIN-MODEL.md` §2. Фидбек code-reviewer. |
 | 1.0 | 2026-07-01 | Начальный план. 7 стадий, dependency graph, точки параллелизации в Stage 4 и Stage 5. |

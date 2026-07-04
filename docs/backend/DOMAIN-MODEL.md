@@ -44,7 +44,7 @@
 | 4 | Organization | `_organizations` | soft + multi-subtype | [`02-business-domain.md §1`](schemas/02-business-domain.md#1-organization) |
 | 5 | Product | `_products` | strong (unique compound `[name, sku]`) | [`02-business-domain.md §2`](schemas/02-business-domain.md#2-product) |
 | 6 | Photo | `_photos` | soft + cluster (3-doc-per-upload) | [`03-storage-and-import.md §1`](schemas/03-storage-and-import.md#1-photo) |
-| 7 | ImportJob | `_importJobs` | state-machine (PENDING → PROCESSING → COMPLETED/FAILED) | [`03-storage-and-import.md §2`](schemas/03-storage-and-import.md#2-importjob) |
+| 7 | ImportJob | `_importJobs` | state-machine (PENDING → PROCESSING → COMPLETED/FAILED) | [`03-storage-and-import.md §2`](schemas/03-storage-and-import.md#2-importjob). **Frontend этого репозитория его НЕ consume'ит** — UI живёт в отдельном admin-app (см. PSL-010). |
 
 ## 4. Этапы реализации
 
@@ -54,7 +54,7 @@
 | Stage 4 Wave 2.A | Backend Dev #1 | Auth module (использует `01-core-users.md` для User + Role) |
 | Stage 4 Wave 2.C | Backend Dev #3 | Organizations + Products CRUD (использует `02-business-domain.md`) |
 | Stage 4 Wave 2.D | Backend Dev #4 | Storage + Photo CRUD (Wave 2.D — использует `03-storage-and-import.md §1`) |
-| Stage 4 Wave 3.B | Backend Dev #5 | Ingestion + ImportJob worker (Wave 3.B — использует `03-storage-and-import.md §2`) |
+| Stage 4 Wave 3.B | Backend Dev #5 | Ingestion + ImportJob worker (Wave 3.B — использует `03-storage-and-import.md §2`). Контракт стабилен; UI-потребитель — отдельное admin-app (см. PSL-010), не фронт этого репозитория. |
 
 ## 5. Связи между группами (visual)
 
@@ -91,5 +91,6 @@
 
 | Версия | Дата | Что |
 |---|---|---|
+| 1.2 | 2026-07-04 | **Frontend boundary.** ImportJob помечен как «не consume'ится frontend'ом этого репозитория, UI в admin-app». Stage 4 Wave 3.B уточнён — backend done, потребитель вынесен. См. PSL-010. |
 | 1.1 | 2026-07-01 | **DOMAIN-MODEL split**: 444-строчный монолит разделён на 3 файла по тематике (core-users, business-domain, storage-and-import) + этот INDEX. Каждый schema-файл ≤ 200 строк, INDEX ≤ 80. Hard-limit (>400 стр) разрешён. Готов к Stage 3 Моделировщик. |
 | 1.0 | 2026-07-01 | Начальная модель (7 сущностей, schema sketches, indexes, rules — все в одном файле). |

@@ -174,6 +174,10 @@
 
 ## 5. ImportJob (`_importJobs`)
 
+> **Граница ответственности (см. PSL-010).** Endpoint-ы `POST /api/imports/{excel|json|api}`, `GET /api/imports`, `POST /api/imports/:id/cancel`, `DELETE /api/imports/:id` остаются на backend **без изменений**: тот же контракт, та же RBAC (`IMPORTS_WRITE` / `IMPORTS_DELETE`), тот же worker (BullMQ + 3 strategy). **UI для них делается в отдельном admin-app**, не в `frontend/` этого репозитория. Поэтому `EXCEL/JSON/API` endpoint-ы считаются **готовыми контрактами**, а не пробелами в Stage 5.
+>
+> Ниже — правила, которые backend **обязуется** соблюдать независимо от того, кто их вызывает.
+
 ### Правило BR-IMP-1: idempotent import (upsert, не duplicate error)
 
 - **[❌]** Не реализовано. Stage 4.E (Ingestion) не завершён. BullMQ worker не написан.
@@ -205,7 +209,7 @@
 | GAP-003 | BR-PRD-4 | Обязательность photoIds при update — документировать что `@IsOptional()` для PATCH | 📋 Minor |
 | GAP-004 | BR-ORG-2 | Discriminator / conditional schema для legalType — deferred до Stage 6 | 📋 Deferred |
 | GAP-005 | BR-PHO-3/4/5 | Photo cluster creation + cascade delete — весь Stage 4.D | 📋 Deferred |
-| GAP-006 | BR-IMP-1/2/4 | Ingestion worker — весь Stage 4.E | 📋 Deferred |
+| GAP-006 | BR-IMP-\* | ~~Ingestion worker — весь Stage 4.E~~ ✅ **Resolved** (см. PSL-009). Контракт жив на backend; UI — в отдельном admin-app (см. PSL-010) | ✅ Done (backend), 📋 Deferred (UI) |
 
 ---
 
@@ -225,5 +229,6 @@
 
 | Версия | Дата | Что |
 |---|---|---|
+| 2.1 | 2026-07-04 | **Frontend boundary.** §5 получил плашку со ссылкой на PSL-010 — frontend этого репозитория больше не expose-imports; UI переезжает в admin-app. GAP-006 переформулирован — backend done, UI deferred в другой репозиторий. |
 | 2.0 | 2026-07-02 | Полная валидация аналитиком. Добавлены статусы `[✅]/[📋]/[❌]` для каждого правила. Добавлен §6 GAP-реестр (6 gaps). Исправлены неточности: BR-ORG-2 (discriminator → deferred), BR-ORG-3 (INN regex → gap), BR-PRD-4 (update optional → minor), BR-USR-9 (R1 → gap). |
 | 1.0 | 2026-07-01 | Начальный реестр. 34 правила. |
