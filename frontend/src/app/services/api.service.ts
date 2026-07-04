@@ -207,9 +207,11 @@ export interface CreateImportResponse {
 }
 
 // ─── Photos / Storage ─────────────────────────
-// Matches backend `UploadResult` from storage.service.ts
-
-export interface PhotoDto {
+/**
+ * Photo cluster — mirrors backend `backend/src/modules/storage/schemas/photo.schema.ts`.
+ * One upload → 3 documents (ORIGINAL + MEDIUM + THUMBNAIL) sharing `linkedPhotoId`.
+ */
+export interface Photo {
   _id: string;
   storageUrl: string;
   originalFilename: string;
@@ -223,10 +225,12 @@ export interface PhotoDto {
   deletedAt?: string | null;
 }
 
-export interface UploadPhotoResult {
-  original: PhotoDto;
-  medium: PhotoDto;
-  thumbnail: PhotoDto;
+export interface UploadPhotoResponse {
+  /**
+   * id ORIGINAL-варианта — передавай в Product.photoIds[] / Organization.photoIds[].
+   */
+  linkedPhotoId: string;
+  cluster: Photo[];
 }
 
 // ─── Service ──────────────────────────────────
@@ -470,16 +474,25 @@ export class ApiService {
   // ═══════════════════════════════════════════
 
   /**
-   * Upload an image file. Returns a 3-variant photo cluster.
+   * Multipart photo upload — POST /api/storage/photos.
    *
-   * @param entityType — 'products' | 'organizations' (controls storage path)
-   * @param file — the raw File object from an <input type="file">
+   * Per backend StorageService.upload: one image → cluster of 3 documents
+   * (ORIGINAL + MEDIUM + THUMBNAIL) sharing `linkedPhotoId`. UI only needs
+   * `linkedPhotoId` to attach to Product/Organization; the cluster is kept
+   * in the response for inspection (e.g. thumbnail URLs).
+   *
+   * @param context — 'products' | 'organizations' (form field, drives storage path)
+   * @param file — raw File from <input type="file">
+   *
+   * **Do not** set the `Content-Type` header — HttpClient auto-sets the
+   * multipart boundary. Setting it manually breaks the upload.
    */
-  uploadPhoto(entityType: string, file: File) {
+  uploadPhoto(context: 'products' | 'organizations', file: File) {
     const fd = new FormData();
     fd.append('file', file);
-    return this.http.post<UploadPhotoResult>(
-      `${this.baseUrl}/storage/upload?entityType=${entityType}`,
+    fd.append('context', context);
+    return this.http.post<UploadPhotoResponse>(
+      `${this.baseUrl}/storage/photos`,
       fd,
     );
   }
@@ -488,14 +501,14 @@ export class ApiService {
    * GET /api/photos/:id — get a single photo document.
    */
   getPhoto(id: string) {
-    return this.http.get<PhotoDto>(`${this.baseUrl}/photos/${id}`);
+    return this.http.get<Photo>(`${this.baseUrl}/photos/${id}`);
   }
 
   /**
    * GET /api/photos/:id/cluster — get all variants in the same cluster.
    */
   findPhotoCluster(id: string) {
-    return this.http.get<PhotoDto[]>(`${this.baseUrl}/photos/${id}/cluster`);
+    return this.http.get<Photo[]>(`${this.baseUrl}/photos/${id}/cluster`);
   }
 
   /**

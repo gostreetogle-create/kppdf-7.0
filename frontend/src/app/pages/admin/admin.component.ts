@@ -713,10 +713,10 @@ export class AdminComponent implements OnInit {
     this.productPhotoError.set(null);
     this.api.uploadPhoto('products', file).subscribe({
       next: (res) => {
-        // Backend returns { original, medium, thumbnail }. Use original's _id
-        // as the linkedPhotoId and build the cluster array locally.
-        const newId = res.original._id;
-        const cluster = [res.original, res.medium, res.thumbnail];
+        // Backend (StorageService.upload) returns { linkedPhotoId, cluster: Photo[] }
+        // — 3 photos sharing linkedPhotoId (ORIGINAL + MEDIUM + THUMBNAIL).
+        const newId = res.linkedPhotoId;
+        const cluster = res.cluster;
 
         // If user is REPLACING a previously-uploaded pending photo,
         // cascade-delete the orphan on the server side. If replacing the

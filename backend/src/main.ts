@@ -1,5 +1,7 @@
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
+import { resolve } from 'path';
 import { AppModule } from './app.module';
 
 /**
@@ -13,7 +15,17 @@ import { AppModule } from './app.module';
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
 
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+  });
+
+  // Serve uploaded files at /uploads/* (URLs returned by StorageController).
+  // Per docs/backend/ARCHITECTURE.md §6 — local disk MVP. Migration to S3
+  // would replace the provider, not the URL contract.
+  const uploadsDir = process.env.UPLOADS_DIR ?? './uploads';
+  app.useStaticAssets(resolve(process.cwd(), uploadsDir), {
+    prefix: '/uploads/',
+  });
 
   app.setGlobalPrefix('api');
   app.useGlobalPipes(
